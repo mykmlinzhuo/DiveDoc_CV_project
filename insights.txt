@@ -1,0 +1,3 @@
+I3D could be changed to other things
+将 FineParser 的 SAP 模块替换为开源的 VideoMAE，可以在保持精细动作识别能力的同时显著提升时序建模效果和整体表现，是兼顾性能与可扩展性的理想方案。\
+
