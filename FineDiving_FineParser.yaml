@@ -9,11 +9,11 @@ warmup_epochs : 5
 # model
 pretrained_i3d_weight : 'models/model_rgb.pth'
 
-data_root : 'data/FINADiving_MTL_256s'
-label_path : 'Annotations/fine-grained_annotation_aqa.pkl'
-train_split : 'Annotations/train_split.pkl'
-test_split : 'Annotations/test_split.pkl'
-data_mask_root: 'data/diving_mask_annotation'
+data_root : '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/FineDiving'
+label_path : '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/Annotations/fine-grained_annotation_aqa.pkl'
+train_split : '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/Annotations/train_split.pkl'
+test_split : '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/Annotations/test_split.pkl'
+data_mask_root: '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/FineDiving_HM'
 
 
 

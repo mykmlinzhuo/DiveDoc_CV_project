@@ -16,12 +16,7 @@ import segmentation_models_pytorch as smp
 
 
 def setup(rank, world_size, args):
-    dist.init_process_group(backend='nccl',  init_method='env://', rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
-    
-    if rank == 0 and args.wandb:
-        wandb.init(project="FineParser")
-    
 
 def train_net(args, rank, world_size):
     setup(rank, world_size, args)
