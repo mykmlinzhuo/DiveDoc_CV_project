@@ -1,0 +1,15 @@
+# python>=3.9.0 for the transformers library
+torch>=0.4.0
+matplotlib==3.1.0
+einops
+timm
+segmentation-models-pytorch
+wandb
+# pip install git+https://github.com/hassony2/torch_videovision
+# pip install git+https://github.com/huggingface/transformers.git
+# installing transformers may need to install rust
+# curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# source $HOME/.cargo/env
+# pip install accelerate
+# pip install opencv-python
+# pip install ultralytics
