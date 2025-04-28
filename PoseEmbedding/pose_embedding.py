@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Union
+from typing import Union, List
 
 class HierarchicalSkeletalEncoder(nn.Module):
     def __init__(
@@ -67,7 +67,7 @@ class HierarchicalSkeletalEncoder(nn.Module):
         total_dim = sum(hidden_dims) + 3 * edge_hidden
         self.proj = nn.Linear(total_dim, out_dim)
 
-    def forward(self, detections: list[Union[dict, None]]) -> torch.Tensor:
+    def forward(self, detections: List[Union[dict, None]]) -> torch.Tensor:
         """
         Args:
             detections: list of length N, each either None or a dict:
@@ -87,6 +87,14 @@ class HierarchicalSkeletalEncoder(nn.Module):
 
             kpts = det['keypoints']      # Tensor[17,2]
             scores = det['scores'].unsqueeze(-1)  # [17,1]
+
+            # STEP 1: Normalize keypoints
+            # Normalize x, y coordinates to [0, 1] based on the bounding box of the keypoints
+            min_vals, _ = kpts.min(dim=0, keepdim=True)  # [1, 2]
+            max_vals, _ = kpts.max(dim=0, keepdim=True)  # [1, 2]
+            kpts = (kpts - min_vals) / (max_vals - min_vals + 1e-6)  # Avoid division by zero
+
+
             # Build input: [x, y, confidence]
             P = torch.cat([kpts, scores], dim=-1)  # [17, 3]
 
@@ -140,13 +148,13 @@ if __name__ == "__main__":
     detections = [
         None,
         {
-            'keypoints': torch.rand(17, 2),
+            'keypoints': torch.rand(17, 2)*100,
             'scores':    torch.rand(17)
         },
         {
-            'keypoints': torch.rand(17, 2),
+            'keypoints': torch.rand(17, 2)*100,
             'scores':    torch.rand(17)
         }
     ]
     features = encoder(detections)
-    print("Output features shape:", features.shape)  # should be [3, out_dim]
+    print("Output features shape:", features)  # should be [3, out_dim]
