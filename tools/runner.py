@@ -7,10 +7,11 @@ from tools import builder, helper
 from utils import misc
 import time
 import json
+from tqdm import tqdm
 
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed import all_reduce, ReduceOp
+# import torch.distributed as dist
+# from torch.nn.parallel import DistributedDataParallel as DDP
+# from torch.distributed import all_reduce, ReduceOp
 import wandb
 import segmentation_models_pytorch as smp
 
@@ -22,6 +23,9 @@ def train_net(args, rank, world_size):
     setup(rank, world_size, args)
     print('Trainer start ... ')
     # build dataset
+    if args.wandb:
+        wandb.init(project="FineParser", config=vars(args))
+    
     train_dataset, test_dataset = builder.dataset_builder(args)
     if world_size > 1:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset,
@@ -93,27 +97,27 @@ def train_net(args, rank, world_size):
         print('resume ckpts @ %d epoch(rho = %.4f, L2 = %.4f , RL2 = %.4f)'
               % (start_epoch - 1, rho_best, L2_min, RL2_min))
 
-    # DDP
-    if world_size > 1:
-        base_model = DDP(base_model, device_ids=[rank])
-        psnet_model = DDP(psnet_model, device_ids=[rank])
-        decoder = [DDP(_decoder, device_ids=[rank]) for _decoder in decoder]
-        regressor_delta = [DDP(_regressor_delta, device_ids=[rank]) for _regressor_delta in regressor_delta]
-        dim_reducer1 = DDP(dim_reducer1)
-        dim_reducer2 = DDP(dim_reducer2)
-        dim_reducer3 = DDP(dim_reducer3)
-        segmenter = DDP(segmenter, device_ids=[rank])
-        video_encoder = DDP(video_encoder, device_ids=[rank], find_unused_parameters=True)
+    # # DDP
+    # if world_size > 1:
+    #     base_model = DDP(base_model, device_ids=[rank])
+    #     psnet_model = DDP(psnet_model, device_ids=[rank])
+    #     decoder = [DDP(_decoder, device_ids=[rank]) for _decoder in decoder]
+    #     regressor_delta = [DDP(_regressor_delta, device_ids=[rank]) for _regressor_delta in regressor_delta]
+    #     dim_reducer1 = DDP(dim_reducer1)
+    #     dim_reducer2 = DDP(dim_reducer2)
+    #     dim_reducer3 = DDP(dim_reducer3)
+    #     segmenter = DDP(segmenter, device_ids=[rank])
+    #     video_encoder = DDP(video_encoder, device_ids=[rank], find_unused_parameters=True)
         
-        base_model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(base_model)
-        psnet_model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(psnet_model)
-        decoder = [torch.nn.SyncBatchNorm.convert_sync_batchnorm(m) for m in decoder]
-        regressor_delta = [torch.nn.SyncBatchNorm.convert_sync_batchnorm(m) for m in regressor_delta]
-        dim_reducer1 = torch.nn.SyncBatchNorm.convert_sync_batchnorm(dim_reducer1)
-        dim_reducer2 = torch.nn.SyncBatchNorm.convert_sync_batchnorm(dim_reducer2)
-        dim_reducer3 = torch.nn.SyncBatchNorm.convert_sync_batchnorm(dim_reducer3)
-        segmenter = torch.nn.SyncBatchNorm.convert_sync_batchnorm(segmenter)
-        video_encoder = torch.nn.SyncBatchNorm.convert_sync_batchnorm(video_encoder)
+    #     base_model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(base_model)
+    #     psnet_model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(psnet_model)
+    #     decoder = [torch.nn.SyncBatchNorm.convert_sync_batchnorm(m) for m in decoder]
+    #     regressor_delta = [torch.nn.SyncBatchNorm.convert_sync_batchnorm(m) for m in regressor_delta]
+    #     dim_reducer1 = torch.nn.SyncBatchNorm.convert_sync_batchnorm(dim_reducer1)
+    #     dim_reducer2 = torch.nn.SyncBatchNorm.convert_sync_batchnorm(dim_reducer2)
+    #     dim_reducer3 = torch.nn.SyncBatchNorm.convert_sync_batchnorm(dim_reducer3)
+    #     segmenter = torch.nn.SyncBatchNorm.convert_sync_batchnorm(segmenter)
+    #     video_encoder = torch.nn.SyncBatchNorm.convert_sync_batchnorm(video_encoder)
     
     # loss
     mse = nn.MSELoss().cuda()
@@ -121,7 +125,8 @@ def train_net(args, rank, world_size):
     focal_loss = smp.losses.FocalLoss('binary').cuda()
 
     if args.test:
-        torch.distributed.barrier()
+        if world_size > 1:
+            torch.distributed.barrier()
         validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
                      dim_reducer1, dim_reducer2, 
                         test_dataloader, -1, optimizer, args, rank)
@@ -161,7 +166,7 @@ def train_net(args, rank, world_size):
             base_model.apply(misc.fix_bn)
         
         total_loss = [0.0, 0.0, 0.0]
-        for idx, (data, target) in enumerate(train_dataloader):
+        for idx, (data, target) in enumerate(tqdm(train_dataloader, desc=f"Epoch {epoch} Training", ncols=100)):
             # num_iter += 1
             opti_flag = True
 
@@ -192,7 +197,8 @@ def train_net(args, rank, world_size):
         t_loss = []
         for l in total_loss:
             loss_tensor = torch.tensor(l).cuda()
-            dist.all_reduce(loss_tensor, op=ReduceOp.SUM)
+            if world_size > 1:
+                dist.all_reduce(loss_tensor, op=ReduceOp.SUM)
             t_loss.append(loss_tensor)
         
         pred_scores = np.array(pred_scores)
@@ -201,11 +207,12 @@ def train_net(args, rank, world_size):
         pred_scores_tensor = torch.tensor(pred_scores).cuda()
         true_scores_tensor = torch.tensor(true_scores).cuda()
         
-        gathered_pred_scores = [torch.zeros_like(pred_scores_tensor) for _ in range(dist.get_world_size())]
-        gathered_true_scores = [torch.zeros_like(true_scores_tensor) for _ in range(dist.get_world_size())]
+        gathered_pred_scores = [torch.zeros_like(pred_scores_tensor) for _ in range(world_size)]
+        gathered_true_scores = [torch.zeros_like(true_scores_tensor) for _ in range(world_size)]
         
-        dist.all_gather(gathered_pred_scores, pred_scores_tensor)
-        dist.all_gather(gathered_true_scores, true_scores_tensor)
+        if world_size > 1:
+            dist.all_gather(gathered_pred_scores, pred_scores_tensor)
+            dist.all_gather(gathered_true_scores, true_scores_tensor)
         
         sum_iou = torch.tensor(sum(segment_metrics["iou_scores"])).cuda()
         sum_f1 = torch.tensor(sum(segment_metrics["f1_scores"])).cuda()
@@ -213,33 +220,48 @@ def train_net(args, rank, world_size):
         sum_accuracy = torch.tensor(sum(segment_metrics["accuracy"])).cuda()
         sum_recall = torch.tensor(sum(segment_metrics["recall"])).cuda()
 
-        dist.all_reduce(sum_iou, op=ReduceOp.SUM)
-        dist.all_reduce(sum_f1, op=ReduceOp.SUM)
-        dist.all_reduce(sum_f2, op=ReduceOp.SUM)
-        dist.all_reduce(sum_accuracy, op=ReduceOp.SUM)
-        dist.all_reduce(sum_recall, op=ReduceOp.SUM)
+        if world_size > 1:
+            dist.all_reduce(sum_iou, op=ReduceOp.SUM)
+            dist.all_reduce(sum_f1, op=ReduceOp.SUM)
+            dist.all_reduce(sum_f2, op=ReduceOp.SUM)
+            dist.all_reduce(sum_accuracy, op=ReduceOp.SUM)
+            dist.all_reduce(sum_recall, op=ReduceOp.SUM)
         
         sum_test_iou_5 = torch.tensor(sum(pred_tious_5)).cuda()
         sum_test_iou_75 = torch.tensor(sum(pred_tious_75)).cuda()
         
-        dist.all_reduce(sum_test_iou_5, op=ReduceOp.SUM)
-        dist.all_reduce(sum_test_iou_75, op=ReduceOp.SUM)
+        if world_size > 1:
+            dist.all_reduce(sum_test_iou_5, op=ReduceOp.SUM)
+            dist.all_reduce(sum_test_iou_75, op=ReduceOp.SUM)
 
         if rank == 0:
             gathered_pred_scores = torch.cat(gathered_pred_scores).cpu().numpy()
             gathered_true_scores = torch.cat(gathered_true_scores).cpu().numpy()
+            print("[DEBUG-Gathered] gathered_pred_scores:", gathered_pred_scores[:10])
+            print("[DEBUG-Gathered] gathered_true_scores:", gathered_true_scores[:10])
+            
+            print("[DEBUG-Summary] Predicted score stats - mean:", np.mean(gathered_pred_scores), 
+                "std:", np.std(gathered_pred_scores),
+                "min:", np.min(gathered_pred_scores), 
+                "max:", np.max(gathered_pred_scores))
+
+            print("[DEBUG-Summary] Ground truth score stats - mean:", np.mean(gathered_true_scores),
+                "std:", np.std(gathered_true_scores),
+                "min:", np.min(gathered_true_scores), 
+                "max:", np.max(gathered_true_scores))
+            
             rho, p = stats.spearmanr(gathered_pred_scores, gathered_true_scores)
             L2 = np.power(gathered_pred_scores - gathered_true_scores, 2).sum() / gathered_true_scores.shape[0]
             RL2 = np.power((gathered_pred_scores - gathered_true_scores) / (gathered_true_scores.max() - gathered_true_scores.min()), 2).sum() / gathered_true_scores.shape[0]
             
-            pred_tious_mean_5 = (sum_test_iou_5 / (len(train_dataloader) * args.bs_train)) / dist.get_world_size()
-            pred_tious_mean_75 = (sum_test_iou_75 / (len(train_dataloader) * args.bs_train)) / dist.get_world_size()
+            pred_tious_mean_5 = (sum_test_iou_5 / (len(train_dataloader) * args.bs_train)) / world_size
+            pred_tious_mean_75 = (sum_test_iou_75 / (len(train_dataloader) * args.bs_train)) / world_size
             
-            iou_score = (sum_iou.item() / dist.get_world_size()) / (len(train_dataloader) * args.bs_train) 
-            f1_score = (sum_f1.item() / dist.get_world_size()) / (len(train_dataloader) * args.bs_train)
-            f2_score = (sum_f2.item() / dist.get_world_size()) / (len(train_dataloader) * args.bs_train)
-            accuracy = (sum_accuracy.item() / dist.get_world_size()) / (len(train_dataloader) * args.bs_train)
-            recall = (sum_recall.item() / dist.get_world_size())/ (len(train_dataloader) * args.bs_train)
+            iou_score = (sum_iou.item() / world_size) / (len(train_dataloader) * args.bs_train) 
+            f1_score = (sum_f1.item() / world_size) / (len(train_dataloader) * args.bs_train)
+            f2_score = (sum_f2.item() / world_size) / (len(train_dataloader) * args.bs_train)
+            accuracy = (sum_accuracy.item() / world_size) / (len(train_dataloader) * args.bs_train)
+            recall = (sum_recall.item() / world_size)/ (len(train_dataloader) * args.bs_train)
             
             print('[Training] EPOCH: %d, tIoU_5: %.4f, tIoU_75: %.4f, Loss_aqa: %.4f, Loss_tas: %.4f, Loss_mask: %.4f'
                 % (epoch, pred_tious_mean_5, pred_tious_mean_75, t_loss[0], t_loss[1], t_loss[2]))
@@ -266,10 +288,10 @@ def train_net(args, rank, world_size):
                 })
 
             
-        if epoch < 50 and (epoch+1)%4==0 or epoch>=50 and (epoch+1)%2==0:
+        if epoch < 50 and (epoch+1)%4==0 or epoch>=50 and (epoch+1)%2==0 or epoch == 0:
             validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
                      dim_reducer1, dim_reducer2, 
-                        test_dataloader, epoch, optimizer, args, rank)
+                        test_dataloader, epoch, optimizer, args, rank, world_size)
             if rank == 0:
                 print('[TEST] EPOCH: %d, best correlation: %.6f, best L2: %.6f, best RL2: %.6f' % (epoch_best_aqa,
                                                                                             rho_best, L2_min, RL2_min))
@@ -289,7 +311,7 @@ def train_net(args, rank, world_size):
 
 
 def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter, 
-             dim_reducer1, dim_reducer2, test_dataloader, epoch, optimizer, args, rank):
+             dim_reducer1, dim_reducer2, test_dataloader, epoch, optimizer, args, rank, world_size):
 
     if rank == 0:
         print("Start validating epoch {}".format(epoch))
@@ -333,6 +355,7 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
         datatime_start = time.time()
 
         for batch_idx, (data, target) in enumerate(test_dataloader, 0):
+            print("[DEBUG-ValidateBatch] Batch true final scores:", data['final_score'][:5].cpu().numpy())
             datatime = time.time() - datatime_start
             start = time.time()
 
@@ -361,12 +384,14 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
                     % (epoch, args.max_epoch, batch_idx, batch_num, batch_time, datatime))
             datatime_start = time.time()
             true_scores.extend(data['final_score'].numpy())
+            print("[DEBUG-Collect] Adding to true_scores:", data['final_score'].shape)
         
         # evaluation results
         t_loss = []
         for l in total_loss:
             loss_tensor = torch.tensor(l).cuda()
-            dist.all_reduce(loss_tensor, op=ReduceOp.SUM)
+            if world_size > 1:
+                dist.all_reduce(loss_tensor, op=ReduceOp.SUM)
             t_loss.append(loss_tensor)
         
         pred_scores = np.array(pred_scores)
@@ -375,11 +400,12 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
         pred_scores_tensor = torch.tensor(pred_scores).cuda()
         true_scores_tensor = torch.tensor(true_scores).cuda()
         
-        gathered_pred_scores = [torch.zeros_like(pred_scores_tensor) for _ in range(dist.get_world_size())]
-        gathered_true_scores = [torch.zeros_like(true_scores_tensor) for _ in range(dist.get_world_size())]
+        gathered_pred_scores = [torch.zeros_like(pred_scores_tensor) for _ in range(world_size)]
+        gathered_true_scores = [torch.zeros_like(true_scores_tensor) for _ in range(world_size)]
         
-        dist.all_gather(gathered_pred_scores, pred_scores_tensor)
-        dist.all_gather(gathered_true_scores, true_scores_tensor)
+        if world_size > 1:
+            dist.all_gather(gathered_pred_scores, pred_scores_tensor)
+            dist.all_gather(gathered_true_scores, true_scores_tensor)
         
         sum_iou = torch.tensor(sum(segment_metrics["iou_scores"])).cuda()
         sum_f1 = torch.tensor(sum(segment_metrics["f1_scores"])).cuda()
@@ -388,17 +414,19 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
         sum_recall = torch.tensor(sum(segment_metrics["recall"])).cuda()
 
         # 使用 all_reduce 聚合数据
-        dist.all_reduce(sum_iou, op=ReduceOp.SUM)
-        dist.all_reduce(sum_f1, op=ReduceOp.SUM)
-        dist.all_reduce(sum_f2, op=ReduceOp.SUM)
-        dist.all_reduce(sum_accuracy, op=ReduceOp.SUM)
-        dist.all_reduce(sum_recall, op=ReduceOp.SUM)
+        if world_size > 1:
+            dist.all_reduce(sum_iou, op=ReduceOp.SUM)
+            dist.all_reduce(sum_f1, op=ReduceOp.SUM)
+            dist.all_reduce(sum_f2, op=ReduceOp.SUM)
+            dist.all_reduce(sum_accuracy, op=ReduceOp.SUM)
+            dist.all_reduce(sum_recall, op=ReduceOp.SUM)
         
         sum_test_iou_5 = torch.tensor(sum(pred_tious_test_5)).cuda()
         sum_test_iou_75 = torch.tensor(sum(pred_tious_test_75)).cuda()
         
-        dist.all_reduce(sum_test_iou_5, op=ReduceOp.SUM)
-        dist.all_reduce(sum_test_iou_75, op=ReduceOp.SUM)
+        if world_size > 1:
+            dist.all_reduce(sum_test_iou_5, op=ReduceOp.SUM)
+            dist.all_reduce(sum_test_iou_75, op=ReduceOp.SUM)
         
         if rank == 0:
             gathered_pred_scores = torch.cat(gathered_pred_scores).cpu().numpy()
@@ -406,8 +434,8 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
             rho, p = stats.spearmanr(gathered_pred_scores, gathered_true_scores)
             L2 = np.power(gathered_pred_scores - gathered_true_scores, 2).sum() / gathered_true_scores.shape[0]
             RL2 = np.power((gathered_pred_scores - gathered_true_scores) / (gathered_true_scores.max() - gathered_true_scores.min()), 2).sum() / gathered_true_scores.shape[0]
-            pred_tious_test_mean_5 = (sum_test_iou_5 / (len(test_dataloader) * args.bs_test)) / dist.get_world_size()
-            pred_tious_test_mean_75 = (sum_test_iou_75 / (len(test_dataloader) * args.bs_test)) / dist.get_world_size()
+            pred_tious_test_mean_5 = (sum_test_iou_5 / (len(test_dataloader) * args.bs_test)) / world_size
+            pred_tious_test_mean_75 = (sum_test_iou_75 / (len(test_dataloader) * args.bs_test)) / world_size
 
             if pred_tious_test_mean_5 > pred_tious_best_5:
                 pred_tious_best_5 = pred_tious_test_mean_5
@@ -415,11 +443,11 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
                 pred_tious_best_75 = pred_tious_test_mean_75
                 epoch_best_tas = epoch
         
-            current_iou_score = (sum_iou.item() / dist.get_world_size()) / (len(test_dataloader) * args.bs_test) / args.voter_number
-            current_f1_score = (sum_f1.item() / dist.get_world_size()) / (len(test_dataloader) * args.bs_test) / args.voter_number
-            current_f2_score = (sum_f2.item() / dist.get_world_size()) / (len(test_dataloader) * args.bs_test)/ args.voter_number
-            current_accuracy = (sum_accuracy.item() / dist.get_world_size()) / (len(test_dataloader) * args.bs_test)/ args.voter_number
-            current_recall = (sum_recall.item() / dist.get_world_size())/ (len(test_dataloader) * args.bs_test)/ args.voter_number
+            current_iou_score = (sum_iou.item() / world_size) / (len(test_dataloader) * args.bs_test) / args.voter_number
+            current_f1_score = (sum_f1.item() / world_size) / (len(test_dataloader) * args.bs_test) / args.voter_number
+            current_f2_score = (sum_f2.item() / world_size) / (len(test_dataloader) * args.bs_test)/ args.voter_number
+            current_accuracy = (sum_accuracy.item() / world_size) / (len(test_dataloader) * args.bs_test)/ args.voter_number
+            current_recall = (sum_recall.item() / world_size)/ (len(test_dataloader) * args.bs_test)/ args.voter_number
             
             
             if current_iou_score > best_iou_score:
@@ -450,6 +478,8 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
                                    dim_reducer1,dim_reducer2,
                                    optimizer, epoch, epoch_best_aqa, rho_best, L2_min, RL2_min, 'best', args)
             helper.save_outputs(gathered_pred_scores, gathered_true_scores, args, epoch)
+            print("Predicted final scores (after voting):", gathered_pred_scores[:20])
+            print("Ground truth scores:", gathered_true_scores[:20])
             print('[TEST] EPOCH: %d, Loss_aqa: %.6f, Loss_tas: %.6f, Loss_mask: %.6f' % (epoch, t_loss[0], t_loss[1], t_loss[2]))
             print('[TEST] EPOCH: %d, tIoU_5: %.6f, tIoU_75: %.6f' % (epoch, pred_tious_best_5, pred_tious_best_75))
             print('[TEST] EPOCH: %d, correlation: %.6f, L2: %.6f, RL2: %.6f' % (epoch, rho, L2, RL2))

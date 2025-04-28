@@ -78,7 +78,7 @@ class FineDiving_Pair_Dataset(torch.utils.data.Dataset):
             temporal_aug_shift = random.randint(self.temporal_shift[0], self.temporal_shift[1])
             end_frame = end_frame + temporal_aug_shift
         
-        frame_list = np.linspace(start_frame, end_frame, self.length).astype(np.int)
+        frame_list = np.linspace(start_frame, end_frame, self.length).astype(int)
         image_frame_idx = [frame_list[i] - start_frame for i in range(self.length)]
 
         video = [Image.open(image_list[image_frame_idx[i]]) for i in range(self.length)]
@@ -130,6 +130,9 @@ class FineDiving_Pair_Dataset(torch.utils.data.Dataset):
             target['final_score'] = self.data_anno.get(sample_2)[1]
             target['difficulty'] = self.data_anno.get(sample_2)[2]
             target['completeness'] = (target['final_score'] / target['difficulty'])
+            
+            # print("[DEBUG-Train] sample_1 final_score:", data['final_score'])
+            # print("[DEBUG-Train] sample_2 final_score:", target['final_score'])
             return data, target
         else:
             # test phrase
@@ -155,6 +158,10 @@ class FineDiving_Pair_Dataset(torch.utils.data.Dataset):
                 tmp['difficulty'] = self.data_anno.get(item)[2]
                 tmp['completeness'] = (tmp['final_score'] / tmp['difficulty'])
                 target_list.append(tmp)
+                
+            print("[DEBUG-Test] sample_1 final_score:", data['final_score'])
+            for idx, target in enumerate(target_list):
+                print(f"[DEBUG-Test] exemplar {idx} final_score:", target['final_score'])
             return data, target_list
 
     def __len__(self):

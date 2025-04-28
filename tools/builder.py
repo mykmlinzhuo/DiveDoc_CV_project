@@ -61,6 +61,18 @@ def dataset_builder(args):
     train_dataset = Dataset(args, transform=train_trans, subset='train')
     test_dataset = Dataset(args, transform=test_trans, subset='test')
 
+    # --------- Pilot Mode Patch START ----------
+    if hasattr(args, 'pilot_size') and args.pilot_size > 0:
+        from torch.utils.data import Subset
+        pilot_train_size = int(args.pilot_size)
+        pilot_test_size = int(args.pilot_size * 0.2)  # 测试集取训练集的20%
+
+        train_dataset = Subset(train_dataset, list(range(min(len(train_dataset), pilot_train_size))))
+        test_dataset = Subset(test_dataset, list(range(min(len(test_dataset), pilot_test_size))))
+        
+        print(f"[Pilot Mode] Using {len(train_dataset)} training samples and {len(test_dataset)} testing samples.")
+    # --------- Pilot Mode Patch END ----------
+    
     return train_dataset, test_dataset
 
 

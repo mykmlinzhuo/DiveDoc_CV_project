@@ -4,7 +4,7 @@ import argparse
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--archs', type = str, choices=['FineParser'],default='FineParser', help = 'our approach')
+    parser.add_argument('--archs', type = str, default='FineParser', help = 'our approach')
     parser.add_argument('--benchmark', type = str, choices=['FineDiving'],default='FineDiving', help = 'dataset')
     parser.add_argument('--prefix', type = str, default='default', help = 'experiment name')
     parser.add_argument('--resume', action='store_true', default=False ,help = 'resume training (interrupted by accident)')
@@ -12,6 +12,7 @@ def get_args():
     parser.add_argument('--fix_bn', type=bool, default=True)
     parser.add_argument('--test', action='store_true', default=True)
     parser.add_argument('--ckpts', type=str, default='None', help='test used ckpt path')
+    parser.add_argument('--pilot_size', type=int, default=0, help='pilot study: if > 0, subsample small dataset')
     args = parser.parse_args()
 
     return args

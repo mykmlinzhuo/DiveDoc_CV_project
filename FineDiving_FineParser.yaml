@@ -3,8 +3,11 @@ bs_train : 2
 bs_test : 1
 workers : 8
 update_iter : 2
-max_epoch : 400
+max_epoch : 100
 warmup_epochs : 5
+pilot_size: 200
+
+archs: 'trial1'
 
 # model
 pretrained_i3d_weight : 'models/model_rgb.pth'
@@ -38,5 +41,6 @@ cuda_device : 6
 resume: False
 temporal_shift_min : -3
 temporal_shift_max : 0
-wandb: False
+wandb: True
 test: False
+
