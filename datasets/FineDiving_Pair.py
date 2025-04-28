@@ -159,9 +159,9 @@ class FineDiving_Pair_Dataset(torch.utils.data.Dataset):
                 tmp['completeness'] = (tmp['final_score'] / tmp['difficulty'])
                 target_list.append(tmp)
                 
-            print("[DEBUG-Test] sample_1 final_score:", data['final_score'])
-            for idx, target in enumerate(target_list):
-                print(f"[DEBUG-Test] exemplar {idx} final_score:", target['final_score'])
+            # print("[DEBUG-Test] sample_1 final_score:", data['final_score'])
+            # for idx, target in enumerate(target_list):
+                # print(f"[DEBUG-Test] exemplar {idx} final_score:", target['final_score'])
             return data, target_list
 
     def __len__(self):

@@ -62,6 +62,9 @@ def dataset_builder(args):
     test_dataset = Dataset(args, transform=test_trans, subset='test')
 
     # --------- Pilot Mode Patch START ----------
+    # print the total number of training and testing samples
+    print(f"Total training samples: {len(train_dataset)}")
+    print(f"Total testing samples: {len(test_dataset)}")
     if hasattr(args, 'pilot_size') and args.pilot_size > 0:
         from torch.utils.data import Subset
         pilot_train_size = int(args.pilot_size)

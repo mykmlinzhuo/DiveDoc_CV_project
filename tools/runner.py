@@ -204,15 +204,11 @@ def train_net(args, rank, world_size):
         pred_scores = np.array(pred_scores)
         true_scores = np.array(true_scores)
         
-        pred_scores_tensor = torch.tensor(pred_scores).cuda()
-        true_scores_tensor = torch.tensor(true_scores).cuda()
-        
-        gathered_pred_scores = [torch.zeros_like(pred_scores_tensor) for _ in range(world_size)]
-        gathered_true_scores = [torch.zeros_like(true_scores_tensor) for _ in range(world_size)]
-        
-        if world_size > 1:
-            dist.all_gather(gathered_pred_scores, pred_scores_tensor)
-            dist.all_gather(gathered_true_scores, true_scores_tensor)
+        pred_scores_tensor = torch.as_tensor(pred_scores, device='cuda')
+        true_scores_tensor = torch.as_tensor(true_scores, device='cuda')
+
+        gathered_pred_scores = pred_scores_tensor.cpu().numpy()
+        gathered_true_scores = true_scores_tensor.cpu().numpy()
         
         sum_iou = torch.tensor(sum(segment_metrics["iou_scores"])).cuda()
         sum_f1 = torch.tensor(sum(segment_metrics["f1_scores"])).cuda()
@@ -235,8 +231,6 @@ def train_net(args, rank, world_size):
             dist.all_reduce(sum_test_iou_75, op=ReduceOp.SUM)
 
         if rank == 0:
-            gathered_pred_scores = torch.cat(gathered_pred_scores).cpu().numpy()
-            gathered_true_scores = torch.cat(gathered_true_scores).cpu().numpy()
             print("[DEBUG-Gathered] gathered_pred_scores:", gathered_pred_scores[:10])
             print("[DEBUG-Gathered] gathered_true_scores:", gathered_true_scores[:10])
             
@@ -397,16 +391,12 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
         pred_scores = np.array(pred_scores)
         true_scores = np.array(true_scores)
         
-        pred_scores_tensor = torch.tensor(pred_scores).cuda()
-        true_scores_tensor = torch.tensor(true_scores).cuda()
-        
-        gathered_pred_scores = [torch.zeros_like(pred_scores_tensor) for _ in range(world_size)]
-        gathered_true_scores = [torch.zeros_like(true_scores_tensor) for _ in range(world_size)]
-        
-        if world_size > 1:
-            dist.all_gather(gathered_pred_scores, pred_scores_tensor)
-            dist.all_gather(gathered_true_scores, true_scores_tensor)
-        
+        pred_scores_tensor = torch.as_tensor(pred_scores, device='cuda')
+        true_scores_tensor = torch.as_tensor(true_scores, device='cuda')
+
+        gathered_pred_scores = pred_scores_tensor.cpu().numpy()
+        gathered_true_scores = true_scores_tensor.cpu().numpy()
+
         sum_iou = torch.tensor(sum(segment_metrics["iou_scores"])).cuda()
         sum_f1 = torch.tensor(sum(segment_metrics["f1_scores"])).cuda()
         sum_f2 = torch.tensor(sum(segment_metrics["f2_scores"])).cuda()
@@ -429,8 +419,6 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
             dist.all_reduce(sum_test_iou_75, op=ReduceOp.SUM)
         
         if rank == 0:
-            gathered_pred_scores = torch.cat(gathered_pred_scores).cpu().numpy()
-            gathered_true_scores = torch.cat(gathered_true_scores).cpu().numpy()
             rho, p = stats.spearmanr(gathered_pred_scores, gathered_true_scores)
             L2 = np.power(gathered_pred_scores - gathered_true_scores, 2).sum() / gathered_true_scores.shape[0]
             RL2 = np.power((gathered_pred_scores - gathered_true_scores) / (gathered_true_scores.max() - gathered_true_scores.min()), 2).sum() / gathered_true_scores.shape[0]

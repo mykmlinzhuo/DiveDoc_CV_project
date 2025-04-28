@@ -5,7 +5,7 @@ workers : 8
 update_iter : 2
 max_epoch : 100
 warmup_epochs : 5
-pilot_size: 200
+pilot_size: 500
 
 archs: 'trial1'
 
