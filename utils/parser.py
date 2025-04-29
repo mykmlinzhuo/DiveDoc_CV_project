@@ -20,6 +20,7 @@ def get_args():
 def setup(args):
 
     args.config = '{}_FineParser.yaml'.format(args.benchmark)
+    print(args.archs, args.benchmark, args.prefix)
     args.experiment_path = os.path.join('./experiments',args.archs, args.benchmark, args.prefix)
     if args.resume:
         cfg_path = os.path.join(args.experiment_path,'config.yaml')

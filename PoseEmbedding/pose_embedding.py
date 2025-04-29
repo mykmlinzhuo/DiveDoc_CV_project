@@ -67,7 +67,7 @@ class HierarchicalSkeletalEncoder(nn.Module):
         total_dim = sum(hidden_dims) + 3 * edge_hidden
         self.proj = nn.Linear(total_dim, out_dim)
 
-    def forward(self, detections: List[Union[dict, None]]) -> torch.Tensor:
+    def forward(self, detections: List[dict[str, torch.Tensor]]) -> torch.Tensor:
         """
         Args:
             detections: list of length N, each either None or a dict:
@@ -78,15 +78,23 @@ class HierarchicalSkeletalEncoder(nn.Module):
         Returns:
             Tensor of shape [N, out_dim]
         """
+        device = None
+        for det in detections:
+            if det is not None:
+                device = det["keypoints"].device
+                break
+        if device is None:
+            device = next(self.proj.parameters()).device
+        
         out_feats = []
         for det in detections:
             if det is None:
                 # If no detection, output zero feature
-                out_feats.append(torch.zeros(self.proj.out_features))
+                out_feats.append(torch.zeros(self.proj.out_features, device=device))
                 continue
 
-            kpts = det['keypoints']      # Tensor[17,2]
-            scores = det['scores'].unsqueeze(-1)  # [17,1]
+            kpts = det['keypoints'].to(device)       # Tensor[17,2]
+            scores = det['scores'].unsqueeze(-1).to(device)   # [17,1]
 
             # STEP 1: Normalize keypoints
             # Normalize x, y coordinates to [0, 1] based on the bounding box of the keypoints
@@ -126,7 +134,7 @@ class HierarchicalSkeletalEncoder(nn.Module):
                         msgs = torch.stack(msgs, dim=0)
                         edge_msgs.append(msgs.max(dim=0)[0])
                     else:
-                        edge_msgs.append(torch.zeros(self.edge_mlp.out_features))
+                        edge_msgs.append(torch.zeros(self.edge_mlp.out_features, device=device))
                 Z = torch.stack(edge_msgs, dim=0)     # [17, edge_hidden]
                 Z_levels.append(Z)
 
@@ -138,7 +146,7 @@ class HierarchicalSkeletalEncoder(nn.Module):
             final_feat = torch.cat(pooled, dim=-1)    # [sum(hidden_i) + 3*edge_hidden]
             out_feats.append(self.proj(final_feat))   # [out_dim]
 
-        return torch.stack(out_feats, dim=0)         # [N, out_dim]
+        return torch.stack(out_feats, dim=0).to(device)         # [N, out_dim]
 
 
 # Example usage:

@@ -28,3 +28,5 @@ tools/__pycache__/
 utils/__pycache__/
 
 experiments
+
+VitPose/yolo8n.pt

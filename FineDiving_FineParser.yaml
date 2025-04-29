@@ -1,19 +1,20 @@
 # basic
 bs_train : 2
 bs_test : 1
-workers : 8
+workers : 1
 update_iter : 2
-max_epoch : 100
-warmup_epochs : 5
-pilot_size: 500
+max_epoch : 20
+warmup_epochs : 2
+pilot_size: 80
 
 archs: 'trial1'
+prefix: 'try'
 
 # model
 pretrained_i3d_weight : 'models/model_rgb.pth'
 
 data_root : '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/FineDiving'
-label_path : '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/Annotations/fine-grained_annotation_aqa.pkl'
+label_path : '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/Annotations/fine-grained_annotation_aqa_with_keypoints.pkl'
 train_split : '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/Annotations/train_split.pkl'
 test_split : '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/Annotations/test_split.pkl'
 data_mask_root: '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/FineDiving_HM'
