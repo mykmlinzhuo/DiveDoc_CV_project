@@ -117,6 +117,7 @@ for id, item in enumerate(demo_data):
     images = []
     for i in range(len(image_list)):
         image = Image.open(image_list[i])
+        print(f"shape of original image: {image.size}")
         image.save(f"demo_data/original_data/original_image_{item[0]}_{item[1]}_{i}.jpg")
         mask = Image.open(mask_list[i]).convert("L")
         image_np = np.array(image)
@@ -127,6 +128,7 @@ for id, item in enumerate(demo_data):
             mask_np = np.array(mask)
         masked_image_np = image_np.copy()
         masked_image_np[mask_np == 0] = 0  
+        print(f"shape of masked image: {masked_image_np.shape}")
         Image.fromarray(masked_image_np).save(f"demo_data/masked_data/masked_image_{item[0]}_{item[1]}_{i}.jpg")
         images.append(Image.fromarray(masked_image_np))
 
@@ -138,6 +140,7 @@ for id, item in enumerate(demo_data):
     )
     keypoint_detection_results = []
     for idx, result in enumerate(results):
+        print(f"shape of detected_image: {result.shape}")
         result.save(f"demo_data/detected_data/detected_image_{item[0]}_{item[1]}_{idx}.jpg")
         # if idx ==48 and item == ('FINAWorldChampionships2019_Women10m_final_r1', 1):
         #     result.save(f"result_{item[0]}_{item[1]}_{idx}.jpg")
@@ -170,6 +173,7 @@ for id, item in enumerate(demo_data):
         draw_links(numpy_image, keypoints, scores, keypoint_edges, link_colors, keypoint_score_threshold=0, thickness=1, show_keypoint_weight=False)
 
         pose_image = Image.fromarray(numpy_image)
+        print(f"shape of pose_image: {pose_image.size}")
         pose_image.save(f"demo_data/pose_data/pose_image_{item[0]}_{item[1]}_{idx}.jpg")
 
     print(f"length of keypoint_detection_results: {len(keypoint_detection_results)}")
