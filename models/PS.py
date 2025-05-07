@@ -11,7 +11,7 @@ class PSNet(nn.Module):
         self.down5 = down(24, 48)
         self.down6 = down(48, 96)
         self.down7 = down(96, 96)
-        self.tas = MLP_tas(64, 2)
+        self.tas = MLP_tas(72, 2)
 
 
     def forward(self, y):

@@ -22,6 +22,7 @@ class FineDiving_Pair_Dataset(torch.utils.data.Dataset):
         self.data_root = args.data_root
         self.mask_root = args.data_mask_root
         self.data_anno = self.read_pickle(args.label_path)
+        self.data_anno_pose = self.data_anno
         with open(args.train_split, 'rb') as f:
             self.train_dataset_list = pickle.load(f)
         with open(args.test_split, 'rb') as f:
@@ -66,6 +67,72 @@ class FineDiving_Pair_Dataset(torch.utils.data.Dataset):
                 for item in file_list:
                     assert self.data_anno[item][0] == key
 
+    def process_pose_list(
+        self,
+        pose_list,
+        length,
+        num_joints: int = 17,
+        score_threshold: float = 0.0,
+    ):
+        """
+        把任意格式的 pose_list 规范成长度 = length 的 list[dict]，
+        每个 dict 里 keypoints 必定是 (17,2) 的单帧张量。
+        """
+        processed = []
+        default_labels = torch.arange(num_joints, dtype=torch.int64)
+
+        def make_blank():
+            return {
+                "keypoints": torch.zeros((num_joints, 2), dtype=torch.float32),
+                "scores":    torch.zeros((num_joints,),    dtype=torch.float32),
+                "labels":    default_labels.clone(),
+                "bbox":      torch.zeros((4,),            dtype=torch.float32),
+            }
+
+        for item in pose_list:
+            if item is None:
+                processed.append(make_blank())
+                continue
+
+            kpts = item["keypoints"]
+            scores = item["scores"]
+            labels = item["labels"]
+            bbox = item["bbox"]
+
+            # --- ❶ clip 情况：多帧 → 逐帧拆开 ---
+            if kpts.dim() == 3:          # (N,17,2)
+                N = kpts.shape[0]
+                for n in range(N):
+                    processed.append({
+                        "keypoints": kpts[n].clone(),
+                        "scores":    scores[n].clone(),
+                        "labels":    labels[n].clone(),
+                        "bbox":      bbox[n].clone(),
+                    })
+            else:                        # (17,2) 正常帧
+                frame_pose = {
+                    "keypoints": kpts.clone(),
+                    "scores":    scores.clone(),
+                    "labels":    labels.clone(),
+                    "bbox":      bbox.clone(),
+                }
+                processed.append(frame_pose)
+
+        # --- ❷ 低阈值置 0 ---
+        if score_threshold > 0:
+            for d in processed:
+                mask = d["scores"] < score_threshold
+                d["keypoints"][mask] = 0
+
+        # --- ❸ 长度对齐 ---
+        if len(processed) < length:
+            processed.extend([make_blank() for _ in range(length - len(processed))])
+        elif len(processed) > length:
+            processed = processed[:length]
+
+        return processed
+
+    
     def load_video(self, video_file_name):
         image_list = sorted((glob.glob(os.path.join(self.data_root, video_file_name[0], str(video_file_name[1]), '*.jpg'))))
         mask_list = sorted((glob.glob(os.path.join(self.mask_root, video_file_name[0], str(video_file_name[1]), '*.jpg'))))
@@ -90,7 +157,34 @@ class FineDiving_Pair_Dataset(torch.utils.data.Dataset):
         transitions = [frames_labels.index(c) for c in frames_catogeries]
 
         _video, _masks = self.transforms(video, masks)
-        return _video, _masks, np.array([transitions[1]-1,transitions[-1]-1]), np.array(frames_labels)
+        
+        pose_detections = None
+        # print(self.data_anno.get(video_file_name))
+        if self.data_anno.get(video_file_name) is not None and len(self.data_anno.get(video_file_name)) >= 6:
+            raw_pose_list = self.data_anno.get(video_file_name)[5]
+            # print("="*40)
+            # print(f"[DEBUG] raw_pose_list length: {len(raw_pose_list)}")
+            pose_detections = []
+            for idx in image_frame_idx:
+                if idx < len(raw_pose_list):
+                    # print(f"\n[DEBUG] Accessing frame_id {idx}:")
+                    pose_info = raw_pose_list[idx]
+                    # print(f"  type(pose_info): {type(pose_info)}")
+                    # if isinstance(pose_info, dict):
+                    #     for k, v in pose_info.items():
+                    #         print(f"    key: {k}, type: {type(v)}, shape: {getattr(v, 'shape', 'N/A')}")
+                    # else:
+                    #     print(f"  pose_info is not a dict, type: {type(pose_info)}")
+                    pose_detections.append(pose_info)
+                else:
+                    # print(f"\n[DEBUG] Missing pose for frame_id {idx}, append None")
+                    pose_detections.append(None)
+        else:
+            pose_detections = [None for _ in range(self.length)]
+
+        # 【统一处理成每帧都有标准化结构的pose字典】
+        pose_detections = self.process_pose_list(pose_detections, self.length)
+        return _video, _masks, np.array([transitions[1]-1,transitions[-1]-1]), np.array(frames_labels), pose_detections
 
 
 
@@ -102,7 +196,7 @@ class FineDiving_Pair_Dataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         sample_1  = self.dataset[index]
         data = {}
-        data['video'], data['video_mask'], data['transits'], data['frame_labels'] = self.load_video(sample_1)
+        data['video'], data['video_mask'], data['transits'], data['frame_labels'], data['pose_detections'] = self.load_video(sample_1)
         data['number'] = self.data_anno.get(sample_1)[0]
         data['final_score'] = self.data_anno.get(sample_1)[1]
         data['difficulty'] = self.data_anno.get(sample_1)[2]
@@ -125,7 +219,8 @@ class FineDiving_Pair_Dataset(torch.utils.data.Dataset):
             idx = random.randint(0, len(file_list) - 1)
             sample_2 = file_list[idx]
             target = {}
-            target['video'], target['video_mask'], target['transits'], target['frame_labels'] = self.load_video(sample_2)
+            target['video'], target['video_mask'], target['transits'], target['frame_labels'], target['pose_detections'] = self.load_video(sample_2)
+            # import pdb; pdb.set_trace()
             target['number'] = self.data_anno.get(sample_2)[0]
             target['final_score'] = self.data_anno.get(sample_2)[1]
             target['difficulty'] = self.data_anno.get(sample_2)[2]
@@ -152,7 +247,8 @@ class FineDiving_Pair_Dataset(torch.utils.data.Dataset):
             target_list = []
             for item in choosen_sample_list:
                 tmp = {}
-                tmp['video'], tmp['video_mask'], tmp['transits'], tmp['frame_labels'] = self.load_video(item)
+                tmp['video'], tmp['video_mask'], tmp['transits'], tmp['frame_labels'], tmp['pose_detections'] = self.load_video(item)
+                # import pdb; pdb.set_trace()
                 tmp['number'] = self.data_anno.get(item)[0]
                 tmp['final_score'] = self.data_anno.get(item)[1]
                 tmp['difficulty'] = self.data_anno.get(item)[2]

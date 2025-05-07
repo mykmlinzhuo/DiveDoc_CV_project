@@ -19,6 +19,22 @@ import segmentation_models_pytorch as smp
 def setup(rank, world_size, args):
     torch.cuda.set_device(rank)
 
+# def custom_collate_fn(batch):
+#     def merge(samples):
+#         merged = {}
+#         for key in samples[0]:
+#             # pose_detections是list of dict → 保留成 list
+#             if key == 'pose_detections':
+#                 merged[key] = [s[key] for s in samples]
+#             elif isinstance(samples[0][key], torch.Tensor):
+#                 merged[key] = torch.stack([s[key] for s in samples], dim=0)
+#             else:
+#                 merged[key] = [s[key] for s in samples]
+#         return merged
+
+#     batch_data, batch_target = zip(*batch)
+#     return merge(batch_data), merge(batch_target)
+
 def train_net(args, rank, world_size):
     setup(rank, world_size, args)
     print('Trainer start ... ')
@@ -43,16 +59,16 @@ def train_net(args, rank, world_size):
                                                     pin_memory=True, sampler=test_sampler)
     else:
         train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.bs_train,
-                                                    shuffle=True , num_workers=int(args.workers),
+                                                    shuffle=True , num_workers=0,
                                                     pin_memory=True, 
                                                     worker_init_fn=misc.worker_init_fn)
         test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=args.bs_test,
-                                                    shuffle=False, num_workers=int(args.workers),
+                                                    shuffle=False, num_workers=0,
                                                     pin_memory=True, )
     
     # build model
     base_model, psnet_model, decoder, regressor_delta, dim_reducer1, \
-        dim_reducer2, video_encoder, dim_reducer3, segmenter = builder.model_builder(args)
+        dim_reducer2, video_encoder, dim_reducer3, segmenter, Pose_Encoder, Final_MLP = builder.model_builder(args)
 
     # CUDA
     global use_gpu
@@ -67,10 +83,12 @@ def train_net(args, rank, world_size):
         video_encoder = video_encoder.cuda()
         segmenter = segmenter.cuda()
         dim_reducer3 = dim_reducer3.cuda()
+        Pose_Encoder = Pose_Encoder.cuda()
+        Final_MLP = Final_MLP.cuda()
 
     n_iter_per_epoch = len(train_dataloader)
     optimizer, scheduler = builder.build_opti_sche(base_model, psnet_model, decoder, regressor_delta,
-                                                        dim_reducer1, dim_reducer2, dim_reducer3, video_encoder, segmenter, args, n_iter_per_epoch)
+                                                        dim_reducer1, dim_reducer2, dim_reducer3, video_encoder, segmenter, Pose_Encoder, Final_MLP, args, n_iter_per_epoch)
 
     start_epoch = 0
     global epoch_best_tas, pred_tious_best_5, pred_tious_best_75, epoch_best_aqa, rho_best, L2_min, RL2_min
@@ -93,31 +111,9 @@ def train_net(args, rank, world_size):
     # resume ckpts
     if args.resume or args.test:
         start_epoch, epoch_best_aqa, rho_best, L2_min, RL2_min = builder.resume_train(base_model, psnet_model, decoder,
-                            dim_reducer1, dim_reducer2, optimizer, dim_reducer3, regressor_delta, segmenter,video_encoder, args)
+                            dim_reducer1, dim_reducer2, optimizer, dim_reducer3, regressor_delta, segmenter, video_encoder, Pose_Encoder, Final_MLP, args)
         print('resume ckpts @ %d epoch(rho = %.4f, L2 = %.4f , RL2 = %.4f)'
               % (start_epoch - 1, rho_best, L2_min, RL2_min))
-
-    # # DDP
-    # if world_size > 1:
-    #     base_model = DDP(base_model, device_ids=[rank])
-    #     psnet_model = DDP(psnet_model, device_ids=[rank])
-    #     decoder = [DDP(_decoder, device_ids=[rank]) for _decoder in decoder]
-    #     regressor_delta = [DDP(_regressor_delta, device_ids=[rank]) for _regressor_delta in regressor_delta]
-    #     dim_reducer1 = DDP(dim_reducer1)
-    #     dim_reducer2 = DDP(dim_reducer2)
-    #     dim_reducer3 = DDP(dim_reducer3)
-    #     segmenter = DDP(segmenter, device_ids=[rank])
-    #     video_encoder = DDP(video_encoder, device_ids=[rank], find_unused_parameters=True)
-        
-    #     base_model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(base_model)
-    #     psnet_model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(psnet_model)
-    #     decoder = [torch.nn.SyncBatchNorm.convert_sync_batchnorm(m) for m in decoder]
-    #     regressor_delta = [torch.nn.SyncBatchNorm.convert_sync_batchnorm(m) for m in regressor_delta]
-    #     dim_reducer1 = torch.nn.SyncBatchNorm.convert_sync_batchnorm(dim_reducer1)
-    #     dim_reducer2 = torch.nn.SyncBatchNorm.convert_sync_batchnorm(dim_reducer2)
-    #     dim_reducer3 = torch.nn.SyncBatchNorm.convert_sync_batchnorm(dim_reducer3)
-    #     segmenter = torch.nn.SyncBatchNorm.convert_sync_batchnorm(segmenter)
-    #     video_encoder = torch.nn.SyncBatchNorm.convert_sync_batchnorm(video_encoder)
     
     # loss
     mse = nn.MSELoss().cuda()
@@ -128,8 +124,8 @@ def train_net(args, rank, world_size):
         if world_size > 1:
             torch.distributed.barrier()
         validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
-                     dim_reducer1, dim_reducer2, 
-                        test_dataloader, -1, optimizer, args, rank)
+                     dim_reducer1, dim_reducer2, Pose_Encoder, Final_MLP,
+                        test_dataloader, -1, optimizer, args, rank, world_size)
         exit(0)
 
     # training phase
@@ -161,6 +157,8 @@ def train_net(args, rank, world_size):
         dim_reducer2.train()
         segmenter.train()
         video_encoder.train()
+        Pose_Encoder.train()
+        Final_MLP.train()
 
         if args.fix_bn:
             base_model.apply(misc.fix_bn)
@@ -179,15 +177,35 @@ def train_net(args, rank, world_size):
             label_2_tas = target['transits'].float().cuda() + 1
             label_1_score = data['final_score'].float().reshape(-1, 1).cuda()
             label_2_score = target['final_score'].float().reshape(-1, 1).cuda()
+            pose_detections_1 = data['pose_detections']
+            pose_detections_2 = target['pose_detections']
+            # import pdb; pdb.set_trace()
+            device = video_1.device
+            for det in pose_detections_1:
+                if det is not None:
+                    det['keypoints'] = det['keypoints'].to(device)
+                    det['scores'] = det['scores'].to(device)
+            for det in pose_detections_2:
+                if det is not None:
+                    det['keypoints'] = det['keypoints'].to(device)
+                    det['scores'] = det['scores'].to(device)
+            
+            # debug
+            # print("[DEBUG-TrainBatch] pose_detections_1:", pose_detections_1)
+            for frame in pose_detections_1:
+                if frame is not None:
+                    print("[DEBUG-TrainBatch] keypoints shape:", frame['keypoints'].shape)
+                    print("[DEBUG-TrainBatch] scores shape:", frame['scores'].shape)
+                    break
 
             # forward
             res = helper.network_forward_train(base_model, psnet_model, decoder, regressor_delta, 
                                          dim_reducer1, dim_reducer2, pred_scores,
-                                         video_1, label_1_score, video_2, label_2_score, video_1_mask, video_2_mask, mse, optimizer,
+                                         video_1, label_1_score, video_2, label_2_score, video_1_mask, video_2_mask, pose_detections_1, pose_detections_2, Pose_Encoder, mse, optimizer,
                                          opti_flag, epoch, idx+1, len(train_dataloader),
                                          args, label_1_tas, label_2_tas, bce,
                                          pred_tious_5, pred_tious_75, dim_reducer3, video_encoder, segmenter, segment_metrics, 
-                                         rank, len(train_dataloader), focal_loss, scheduler, n_iter_per_epoch)
+                                         rank, len(train_dataloader), focal_loss, scheduler, n_iter_per_epoch, Final_MLP)
             
             for t in range(len(res)):
                 total_loss[t] += res[t]
@@ -197,8 +215,6 @@ def train_net(args, rank, world_size):
         t_loss = []
         for l in total_loss:
             loss_tensor = torch.tensor(l).cuda()
-            if world_size > 1:
-                dist.all_reduce(loss_tensor, op=ReduceOp.SUM)
             t_loss.append(loss_tensor)
         
         pred_scores = np.array(pred_scores)
@@ -215,21 +231,10 @@ def train_net(args, rank, world_size):
         sum_f2 = torch.tensor(sum(segment_metrics["f2_scores"])).cuda()
         sum_accuracy = torch.tensor(sum(segment_metrics["accuracy"])).cuda()
         sum_recall = torch.tensor(sum(segment_metrics["recall"])).cuda()
-
-        if world_size > 1:
-            dist.all_reduce(sum_iou, op=ReduceOp.SUM)
-            dist.all_reduce(sum_f1, op=ReduceOp.SUM)
-            dist.all_reduce(sum_f2, op=ReduceOp.SUM)
-            dist.all_reduce(sum_accuracy, op=ReduceOp.SUM)
-            dist.all_reduce(sum_recall, op=ReduceOp.SUM)
         
         sum_test_iou_5 = torch.tensor(sum(pred_tious_5)).cuda()
         sum_test_iou_75 = torch.tensor(sum(pred_tious_75)).cuda()
         
-        if world_size > 1:
-            dist.all_reduce(sum_test_iou_5, op=ReduceOp.SUM)
-            dist.all_reduce(sum_test_iou_75, op=ReduceOp.SUM)
-
         if rank == 0:
             print("[DEBUG-Gathered] gathered_pred_scores:", gathered_pred_scores[:10])
             print("[DEBUG-Gathered] gathered_true_scores:", gathered_true_scores[:10])
@@ -284,7 +289,7 @@ def train_net(args, rank, world_size):
             
         if epoch < 50 and (epoch+1)%4==0 or epoch>=50 and (epoch+1)%2==0 or epoch == 0:
             validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
-                     dim_reducer1, dim_reducer2, 
+                     dim_reducer1, dim_reducer2, Pose_Encoder, Final_MLP,
                         test_dataloader, epoch, optimizer, args, rank, world_size)
             if rank == 0:
                 print('[TEST] EPOCH: %d, best correlation: %.6f, best L2: %.6f, best RL2: %.6f' % (epoch_best_aqa,
@@ -296,7 +301,7 @@ def train_net(args, rank, world_size):
         if rank == 0:
             helper.save_checkpoint(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter, 
                                     dim_reducer1,dim_reducer2,
-                                   optimizer, epoch, epoch_best_aqa, rho_best, L2_min, RL2_min, 'last', args)
+                                   optimizer, epoch, epoch_best_aqa, rho_best, L2_min, RL2_min, Pose_Encoder, Final_MLP, 'last', args)
         
 
         # scheduler lr
@@ -305,7 +310,7 @@ def train_net(args, rank, world_size):
 
 
 def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter, 
-             dim_reducer1, dim_reducer2, test_dataloader, epoch, optimizer, args, rank, world_size):
+             dim_reducer1, dim_reducer2, Pose_Encoder, Final_MLP, test_dataloader, epoch, optimizer, args, rank, world_size):
 
     if rank == 0:
         print("Start validating epoch {}".format(epoch))
@@ -338,6 +343,8 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
     dim_reducer1.eval()
     dim_reducer2.eval()
     segmenter.eval()
+    Pose_Encoder.eval()
+    Final_MLP.eval()
     
     mse = nn.MSELoss().cuda()
     bce = nn.BCELoss().cuda()
@@ -361,13 +368,26 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
             label_2_tas_list = [item['transits'].float().cuda() + 1 for item in target]
             label_2_score_list = [item['final_score'].float().reshape(-1, 1).cuda() for item in target]
             label_1_score = data['final_score'].float().cuda()
+            pose_detections_1 = data['pose_detections']
+            pose_detections_2_list = [item['pose_detections'] for item in target]
+            device = video_1.device
+            for det in pose_detections_1:
+                if det is not None:
+                    det['keypoints'] = det['keypoints'].to(device)
+                    det['scores'] = det['scores'].to(device)
+            for pose_detections_2 in pose_detections_2_list:
+                for det in pose_detections_2:
+                    if det is not None:
+                        det['keypoints'] = det['keypoints'].to(device)
+                        det['scores'] = det['scores'].to(device)
+            
 
             res = helper.network_forward_test(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
                                         dim_reducer1, dim_reducer2, pred_scores,
-                                        video_1, video_2_list, label_2_score_list, video_1_mask, video_2_mask_list,
+                                        video_1, video_2_list, label_2_score_list, video_1_mask, video_2_mask_list, pose_detections_1, pose_detections_2_list,
                                         args, label_1_tas, label_2_tas_list, 
                                         pred_tious_test_5, pred_tious_test_75, segment_metrics,
-                                        mse, bce, focal_loss, label_1_score)
+                                        mse, bce, focal_loss, label_1_score, Pose_Encoder, Final_MLP)
             
             for t in range(len(res)):
                 total_loss[t] += res[t]
@@ -384,8 +404,6 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
         t_loss = []
         for l in total_loss:
             loss_tensor = torch.tensor(l).cuda()
-            if world_size > 1:
-                dist.all_reduce(loss_tensor, op=ReduceOp.SUM)
             t_loss.append(loss_tensor)
         
         pred_scores = np.array(pred_scores)
@@ -404,19 +422,10 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
         sum_recall = torch.tensor(sum(segment_metrics["recall"])).cuda()
 
         # 使用 all_reduce 聚合数据
-        if world_size > 1:
-            dist.all_reduce(sum_iou, op=ReduceOp.SUM)
-            dist.all_reduce(sum_f1, op=ReduceOp.SUM)
-            dist.all_reduce(sum_f2, op=ReduceOp.SUM)
-            dist.all_reduce(sum_accuracy, op=ReduceOp.SUM)
-            dist.all_reduce(sum_recall, op=ReduceOp.SUM)
         
         sum_test_iou_5 = torch.tensor(sum(pred_tious_test_5)).cuda()
         sum_test_iou_75 = torch.tensor(sum(pred_tious_test_75)).cuda()
         
-        if world_size > 1:
-            dist.all_reduce(sum_test_iou_5, op=ReduceOp.SUM)
-            dist.all_reduce(sum_test_iou_75, op=ReduceOp.SUM)
         
         if rank == 0:
             rho, p = stats.spearmanr(gathered_pred_scores, gathered_true_scores)
