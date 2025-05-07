@@ -1,136 +1,43 @@
-# FineParser: A Fine-grained Spatio-temporal Action Parser for Human-centric Action Quality Assessment
+## 2025.4.27
 
-Created by [Jinglin Xu](http://39.108.48.32/XuWebsite/), [Sibo Yin](https://github.com/Yanruyu-Beta/), [Guohao Zhao](https://github.com/afasgafa), [Zishuo Wang](http://39.108.48.32/mipl/news/news.php?id=CHwangzishuo), [Yuxin Peng](http://39.108.48.32/mipl/pengyuxin/)
+### Updates:
+- **Added**: `VitPose` folder for keypoint estimation.
+- **Instructions**:
+  1. Follow the `requirements.txt` file to install the required environment.
+  2. Run `dataset_pose.py` to generate the file `fine-grained_annotation_aqa_with_keypoints.pkl`.
 
-This repository contains the PyTorch implementation for FineParser (CVPR 2024, Oral).
+### Details:
+- The file `fine-grained_annotation_aqa_with_keypoints.pkl` is similar to the original `fine-grained_annotation_aqa.pkl`, with the following difference:
+  - For each key, its value now includes an **additional sixth element**, which is a list.
+  - The list has a length equal to the number of images for that key.
+  - Each element in the list is either:
+    - A **dictionary** (if a person is detected in the corresponding frame), or
+    - **None** (if no person is detected in the frame).
 
-[[Project Page]](https://pku-icst-mipl.github.io/FineParser_ProjectPage/) [[Paper]](https://openaccess.thecvf.com/content/CVPR2024/papers/Xu_FineParser_A_Fine-grained_Spatio-temporal_Action_Parser_for_Human-centric_Action_Quality_CVPR_2024_paper.pdf)
+### Dictionary Structure:
+- If a person is detected, the dictionary contains the following keys:
+  1. **`keypoints`**: The detected keypoints for the person.
+  2. **`scores`**: The confidence scores for each keypoint.
+  3. **`labels`**: The labels associated with the detected keypoints.
+  4. **`bbox`**: The bounding box coordinates for the detected person.
 
-## Overview
-
-<center>
-    <img style="border-radius: 0.3125em;
-    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);" 
-    src="images/poster.png" width = "100%" alt=""/>
-    <br>
-    <div style="color:orange; border-bottom: 1px solid #d9d9d9;
-    display: inline-block;
-    color: #999;
-    padding: 2px;">
-  	</div>
-</center>
-
-
-## Requirements
-
-Make sure the following dependencies installed (python):
-
-* pytorch >= 0.4.0
-* matplotlib=3.1.0
-* einops
-* timm
-* torch_videovision
-
-```
-pip install git+https://github.com/hassony2/torch_videovision
-```
-
-
-## Dataset & Annotations
-
-### FineDiving Download
-
-To download the FineDiving dataset and annotations, please follow [FineDiving](https://github.com/xujinglin/FineDiving).
-
-### FineDiving-HM Download
-To download FineDiving-HM, please sign the [Release Agreement](agreement/Release_Agreement.pdf) and send it to send it to Jinglin Xu (xujinglinlove@gmail.com). By sending the application, you are agreeing and acknowledging that you have read and understand the notice. We will reply with the file and the corresponding guidelines right after we receive your request!
-
-
-The format of FineDiving-HM is consistent with FineDiving. Please place the downloaded FineDiving-HM in `data`.
-
-
-<center>
-    <img style="border-radius: 0.3125em;
-    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);" 
-    src="images/FineDiving-HM.png" width = "100%" alt=""/>
-    <br>
-    <div style="color:orange; border-bottom: 1px solid #d9d9d9;
-    display: inline-block;
-    color: #999;
-    padding: 2px;">
-  	</div>
-</center>
-
-
-### Data Structure
-
-```
-$DATASET_ROOT
-├── FineDiving
-|  ├── FINADivingWorldCup2021_Men3m_final_r1
-|     ├── 0
-|        ├── 00489.jpg
-|        ...
-|        └── 00592.jpg
-|     ...
-|     └── 11
-|        ├── 14425.jpg
-|        ...
-|        └── 14542.jpg
-|  ...
-|  └── FullMenSynchronised10mPlatform_Tokyo2020Replays_2
-|     ├── 0
-|     ...
-|     └── 16 
-└──FineDiving_HM
-|  ├── FINADivingWorldCup2021_Men3m_final_r1
-|     ├── 0
-|        ├── 00489.jpg
-|        ...
-|        └── 00592.jpg
-|     ...
-|     └── 11
-|        ├── 14425.jpg
-|        ...
-|        └── 14542.jpg
-|  ...
-|  └── FullMenSynchronised10mPlatform_Tokyo2020Replays_2
-|     ├── 0
-|     ...
-|     └── 16 
-
-$ANNOTATIONS_ROOT
-|  ├── FineDiving_coarse_annotation.pkl
-|  ├── FineDiving_fine-grained_annotation.pkl
-|  ├── Sub_action_Types_Table.pkl
-|  ├── fine-grained_annotation_aqa.pkl
-|  ├── train_split.pkl
-|  ├── test_split.pkl
-```
-
-## Training
-Training on 4*NVIDIA RTX 4090.
-
-To download pretrained_i3d_wight, please follow [kinetics_i3d_pytorch](https://github.com/hassony2/kinetics_i3d_pytorch/tree/master), and put `model_rgb.pth` in `models` folder.
-
-To train the model, please run:
-```bash
-python launch.py
-```
-
-## Test
-To test the trained model, please set `test: True` in [config](FineDiving_FineParser.yaml) and run:
-```bash
-python launch.py
-```
-
-## Reference
-```
-@InProceedings{Xu_2024_CVPR_fineparser, 
-author = {Xu, Jinglin and Yin, Sibo and Zhao, Guohao and Wang, Zishuo and Peng, Yuxin}, 
-title = {FineParser: A Fine-grained Spatio-temporal Action Parser for Human-centric Action Quality Assessment}, 
-booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, 
-year = {2024}, 
-pages = {14628-14637} 
-}
-```
+## 2025.4.28
+### Updates:
+- **Refactored**: The total pipe for running on a single gpu.
+- **Baseline Results**: 
+<!-- [TEST] EPOCH: -1, tIoU_5: 0.995995, tIoU_75: 0.889186
+[TEST] EPOCH: -1, correlation: 0.922811, L2: 46.747684, RL2: 0.004289
+[TEST] EPOCH: -1, IOU Score: 0.090167, F1 Score: 0.160546, F2 Score: 0.110866, Accuracy: 0.934730, Recall: 0.140347 -->
+<!-- show this in a table -->
+| Metric        | Value       |
+|---------------|-------------|
+| tIoU_5        | 0.995995    |
+| tIoU_75       | 0.889186    |
+| Correlation    | 0.922811    |
+| L2            | 46.747684   |
+| RL2           | 0.004289    |
+| IOU Score     | 0.090167    |
+| F1 Score      | 0.160546    |
+| F2 Score      | 0.110866    |
+| Accuracy      | 0.934730    |
+| Recall        | 0.140347    |

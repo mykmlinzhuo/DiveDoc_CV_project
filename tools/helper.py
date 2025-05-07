@@ -254,7 +254,7 @@ def network_forward_test(base_model, psnet_model, decoder, regressor_delta, vide
     score = 0
     tIoU_results = []
     t_loss = [0.0,0.0,0.0]
-    for video_2, video_2_mask, label_2_score, label_2_tas in zip(video_2_list, video_2_mask_list, label_2_score_list, label_2_tas_list):
+    for idx, (video_2, video_2_mask, label_2_score, label_2_tas) in enumerate(zip(video_2_list, video_2_mask_list, label_2_score_list, label_2_tas_list)):
         
         ############# Segmentation #############
     
@@ -420,7 +420,17 @@ def network_forward_test(base_model, psnet_model, decoder, regressor_delta, vide
         delta=torch.cat((delta1,delta2),1)
         delta = delta.mean(1).unsqueeze(-1) 
         
-        score += (delta[:delta.shape[0] // 2].detach() + label_2_score)
+        predicted_score = delta[:delta.shape[0] // 2].detach() + label_2_score
+        
+        # if idx == 0:  # 只打印第一个exemplar（防止太多）
+        #     print(f"[DEBUG] predicted_score.shape: {predicted_score.shape}")
+        #     print(f"[DEBUG] predicted_score values:", predicted_score.squeeze().tolist())
+
+        score += predicted_score
+        # score += (delta[:delta.shape[0] // 2].detach() + label_2_score)
+        # predicted_score = delta[:delta.shape[0] // 2].detach() + label_2_score
+        # for i in range(predicted_score.shape[0]):
+        #     pred_scores.append(predicted_score[i].item())
         
         loss_aqa = mse(delta[:delta.shape[0] // 2], (label_1_score - label_2_score))
         

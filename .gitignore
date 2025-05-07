@@ -1,7 +1,30 @@
+# 忽略 zip 文件
+*.zip
+
+# 忽略模型权重文件
+models/*.pth
+
+# 忽略所有Python编译缓存
 __pycache__/
-experiments/
+*.pyc
+*.pyo
+
+# 忽略wandb日志文件
 wandb/
+
+# 忽略torch_videovision目录（如果你确定这是临时或下载内容）
+torch_videovision/
+
+# 忽略datasets下的缓存
 datasets/__pycache__/
+
+# 忽略models下的缓存
 models/__pycache__/
+
+# 忽略tools下的缓存
 tools/__pycache__/
+
+# 忽略utils下的缓存
 utils/__pycache__/
+
+experiments
