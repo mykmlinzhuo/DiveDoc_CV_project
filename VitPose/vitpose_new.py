@@ -8,6 +8,8 @@ from PIL import Image
 from transformers import AutoProcessor, RTDetrForObjectDetection, VitPoseForPoseEstimation, AutoProcessor, AutoModelForObjectDetection, GroundingDinoModel
 import math
 import cv2
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = "1"
 
 
 def draw_points(image, keypoints, scores, pose_keypoint_color, keypoint_score_threshold, radius, show_keypoint_weight):
@@ -145,12 +147,13 @@ palette = np.array(
 )
 
 link_colors = palette[[0, 0, 0, 0, 7, 7, 7, 9, 9, 9, 9, 9, 16, 16, 16, 16, 16, 16, 16]]
-keypoint_colors = palette[[16, 16, 16, 16, 16, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0, 0, 0]]
+keypoint_colors = palette[[17, 17, 17, 17, 17, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0, 0, 0]]
 
 numpy_image = np.array(image)
 
 for pose_result in image_pose_result:
     scores = np.array(pose_result["scores"])
+    print(f"type of scores: {type(pose_result['scores'])}")
     keypoints = np.array(pose_result["keypoints"])
 
     # draw each point on image
