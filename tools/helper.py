@@ -369,7 +369,7 @@ def network_forward_train(base_model, psnet_model, decoder, regressor_delta,
 
 def network_forward_test(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter, 
                          dim_reducer1, dim_reducer2, pred_scores,
-                         video_1, video_2_list, label_2_score_list, video_1_mask, video_2_mask_list, pose_detections_1, pose_detections_2,
+                         video_1, video_2_list, label_2_score_list, video_1_mask, video_2_mask_list, pose_detections_1, pose_detections_2_list,
                          args, label_1_tas, label_2_tas_list,
                          pred_tious_test_5, pred_tious_test_75, segment_metrics,
                          mse, bce, focal_loss, label_1_score,
@@ -377,7 +377,7 @@ def network_forward_test(base_model, psnet_model, decoder, regressor_delta, vide
     score = 0
     tIoU_results = []
     t_loss = [0.0,0.0,0.0]
-    for idx, (video_2, video_2_mask, label_2_score, label_2_tas) in enumerate(zip(video_2_list, video_2_mask_list, label_2_score_list, label_2_tas_list)):
+    for idx, (video_2, video_2_mask, label_2_score, label_2_tas, pose_detections_2) in enumerate(zip(video_2_list, video_2_mask_list, label_2_score_list, label_2_tas_list, pose_detections_2_list)):
         
         ############# Segmentation #############
     
@@ -471,11 +471,11 @@ def network_forward_test(base_model, psnet_model, decoder, regressor_delta, vide
             selected_frames = torch.stack(selected_frames, dim=0)  # [B2, pose_dim]
             pose_seg.append(selected_frames)
 
-        pose_seg = torch.stack(pose_seg, dim= -1)  # [B2, 9, pose_dim]
+        pose_seg = torch.stack(pose_seg, dim= 1)  # [B2, 9, pose_dim]
 
         dyn = com_feature_12_u * torch.sigmoid(mask_feature)
 
-        u_fea = torch.cat([dyn, pose_seg], dim=1) 
+        u_fea = torch.cat([dyn, pose_seg], dim= -1) 
 
         half = u_fea.shape[0] // 2
         video_1_fea = u_fea[:half]

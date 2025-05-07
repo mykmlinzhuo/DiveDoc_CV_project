@@ -287,17 +287,17 @@ def train_net(args, rank, world_size):
                 })
 
             
-        # if epoch < 50 and (epoch+1)%4==0 or epoch>=50 and (epoch+1)%2==0 or epoch == 0:
-        #     validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
-        #              dim_reducer1, dim_reducer2, Pose_Encoder, Final_MLP,
-        #                 test_dataloader, epoch, optimizer, args, rank, world_size)
-        #     if rank == 0:
-        #         print('[TEST] EPOCH: %d, best correlation: %.6f, best L2: %.6f, best RL2: %.6f' % (epoch_best_aqa,
-        #                                                                                     rho_best, L2_min, RL2_min))
-        #         print('[TEST] EPOCH: %d, best tIoU_5: %.6f, best tIoU_75: %.6f' % (epoch_best_tas,
-        #                                                                     pred_tious_best_5, pred_tious_best_75))
-        #         print('[TEST] EPOCH: %d, best seg_iou: %.6f, best seg_f1: %.6f,  best seg_f2: %.6f,  best seg_acc: %.6f,  best seg_rec: %.6f' % 
-        #             (epoch_best_seg, best_iou_score, best_f1_score, best_f2_score, best_accuracy, best_recall))
+        if epoch < 50 and (epoch+1)%4==0 or epoch>=50 and (epoch+1)%2==0 or epoch == 0:
+            validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
+                     dim_reducer1, dim_reducer2, Pose_Encoder, Final_MLP,
+                        test_dataloader, epoch, optimizer, args, rank, world_size)
+            if rank == 0:
+                print('[TEST] EPOCH: %d, best correlation: %.6f, best L2: %.6f, best RL2: %.6f' % (epoch_best_aqa,
+                                                                                            rho_best, L2_min, RL2_min))
+                print('[TEST] EPOCH: %d, best tIoU_5: %.6f, best tIoU_75: %.6f' % (epoch_best_tas,
+                                                                            pred_tious_best_5, pred_tious_best_75))
+                print('[TEST] EPOCH: %d, best seg_iou: %.6f, best seg_f1: %.6f,  best seg_f2: %.6f,  best seg_acc: %.6f,  best seg_rec: %.6f' % 
+                    (epoch_best_seg, best_iou_score, best_f1_score, best_f2_score, best_accuracy, best_recall))
         if rank == 0:
             helper.save_checkpoint(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter, 
                                     dim_reducer1,dim_reducer2,
@@ -369,21 +369,22 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
             label_2_score_list = [item['final_score'].float().reshape(-1, 1).cuda() for item in target]
             label_1_score = data['final_score'].float().cuda()
             pose_detections_1 = data['pose_detections']
-            pose_detections_2 = [item['pose_detections'] for item in target]
+            pose_detections_2_list = [item['pose_detections'] for item in target]
             device = video_1.device
             for det in pose_detections_1:
                 if det is not None:
                     det['keypoints'] = det['keypoints'].to(device)
                     det['scores'] = det['scores'].to(device)
-            for det in pose_detections_2:
-                if det is not None:
-                    det['keypoints'] = det['keypoints'].to(device)
-                    det['scores'] = det['scores'].to(device)
+            for pose_detections_2 in pose_detections_2_list:
+                for det in pose_detections_2:
+                    if det is not None:
+                        det['keypoints'] = det['keypoints'].to(device)
+                        det['scores'] = det['scores'].to(device)
             
 
             res = helper.network_forward_test(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
                                         dim_reducer1, dim_reducer2, pred_scores,
-                                        video_1, video_2_list, label_2_score_list, video_1_mask, video_2_mask_list, pose_detections_1, pose_detections_2,
+                                        video_1, video_2_list, label_2_score_list, video_1_mask, video_2_mask_list, pose_detections_1, pose_detections_2_list,
                                         args, label_1_tas, label_2_tas_list, 
                                         pred_tious_test_5, pred_tious_test_75, segment_metrics,
                                         mse, bce, focal_loss, label_1_score, Pose_Encoder, Final_MLP)

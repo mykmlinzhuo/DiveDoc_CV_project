@@ -27,13 +27,11 @@
 - **Baseline Results**: 
   | Metric        | Value       |
   |---------------|-------------|
-  | tIoU_5        | 0.995995    |
-  | tIoU_75       | 0.889186    |
-  | Correlation    | 0.922811    |
-  | L2            | 46.747684   |
-  | RL2           | 0.004289    |
+  | tIoU_75       | 0.687500    |
+  | Correlation    |  0.850626   |
+  | RL2           | 0.014540   |
   | IOU Score     | 0.090167    |
-  | F1 Score      | 0.160546    |
-  | F2 Score      | 0.110866    |
-  | Accuracy      | 0.934730    |
-  | Recall        | 0.140347    |
+  | F1 Score      | 0.035744    |
+  | F2 Score      | 0.023285    |
+  | Accuracy      | 0.952926    |
+  | Recall        | 0.051676    |
