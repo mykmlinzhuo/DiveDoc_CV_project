@@ -148,10 +148,146 @@ class HierarchicalSkeletalEncoder(nn.Module):
 
         return torch.stack(out_feats, dim=0).to(device)         # [N, out_dim]
 
+class WeightedMLPBasedEncoder(nn.Module):
+    def __init__(
+        self,
+        num_joints: int = 17,
+        input_dim: int = 2,          # (x, y) coordinates
+        hidden_dims: tuple = (128, 64),
+        out_dim: int = 128
+    ):
+        super().__init__()
+        self.num_joints = num_joints
+
+        # MLP layers for encoding keypoints and confidence
+        self.mlp = nn.Sequential(
+            nn.Linear(input_dim + 1, hidden_dims[0]),  # Input: (x, y, confidence)
+            nn.ReLU(),
+            nn.Linear(hidden_dims[0], hidden_dims[1]),
+            nn.ReLU()
+        )
+
+        # Final projection layer
+        self.proj = nn.Linear(hidden_dims[1] * num_joints, out_dim)
+
+    def forward(self, detections: List[Union[dict, None]]) -> torch.Tensor:
+        """
+        Args:
+            detections: list of length N, each either None or a dict:
+                {
+                  'keypoints': Tensor[17,2],   # (x,y)
+                  'scores':    Tensor[17]      # confidences
+                }
+        Returns:
+            Tensor of shape [N, out_dim]
+        """
+        out_feats = []
+        for det in detections:
+            if det is None:
+                # If no detection, output zero feature
+                out_feats.append(torch.zeros(self.proj.out_features))
+                continue
+
+            kpts = det['keypoints']      # Tensor[17,2]
+            scores = det['scores'].unsqueeze(-1)  # [17,1]
+
+            # Normalize keypoints to [0, 1] based on the bounding box
+            min_vals, _ = kpts.min(dim=0, keepdim=True)  # [1, 2]
+            max_vals, _ = kpts.max(dim=0, keepdim=True)  # [1, 2]
+            kpts = (kpts - min_vals) / (max_vals - min_vals + 1e-6)  # Avoid division by zero
+
+            # Combine keypoints and confidence scores
+            P = torch.cat([kpts, scores], dim=-1)  # [17, 3]
+
+            # Pass through MLP
+            encoded = self.mlp(P)  # [17, hidden_dims[1]]
+
+            # Weight features by confidence scores
+            weighted_encoded = encoded * scores  # [17, hidden_dims[1]]
+
+            # Flatten and project to final output
+            flattened = weighted_encoded.view(-1)  # [17 * hidden_dims[1]]
+            final_feat = self.proj(flattened)      # [out_dim]
+            out_feats.append(final_feat)
+
+        return torch.stack(out_feats, dim=0)  # [N, out_dim]
+    
+
+class NaiveMLPEncoder(nn.Module):
+    def __init__(
+        self,
+        num_joints: int = 17,
+        input_dim: int = 2,          # (x, y) coordinates
+        hidden_dim: int = 128,
+        out_dim: int = 128
+    ):
+        super().__init__()
+        self.num_joints = num_joints
+
+        # MLP layers for encoding keypoints and confidence
+        self.mlp = nn.Sequential(
+            nn.Linear((input_dim + 1) * num_joints, hidden_dim),  # Input: (x, y, confidence) for all joints
+            nn.ReLU(),
+            nn.Linear(hidden_dim, out_dim)
+        )
+
+    def forward(self, detections: List[Union[dict, None]]) -> torch.Tensor:
+        """
+        Args:
+            detections: list of length N, each either None or a dict:
+                {
+                  'keypoints': Tensor[17,2],   # (x,y)
+                  'scores':    Tensor[17]      # confidences
+                }
+        Returns:
+            Tensor of shape [N, out_dim]
+        """
+        out_feats = []
+        for det in detections:
+            if det is None:
+                # If no detection, output zero feature
+                out_feats.append(torch.zeros(self.mlp[-1].out_features))
+                continue
+
+            kpts = det['keypoints']      # Tensor[17,2]
+            scores = det['scores'].unsqueeze(-1)  # [17,1]
+
+            # Normalize keypoints to [0, 1] based on the bounding box
+            min_vals, _ = kpts.min(dim=0, keepdim=True)  # [1, 2]
+            max_vals, _ = kpts.max(dim=0, keepdim=True)  # [1, 2]
+            kpts = (kpts - min_vals) / (max_vals - min_vals + 1e-6)  # Avoid division by zero
+
+            # Combine keypoints and confidence scores
+            P = torch.cat([kpts, scores], dim=-1)  # [17, 3]
+
+            # Flatten the input for the MLP
+            flattened = P.view(-1)  # [17 * 3]
+
+            # Pass through MLP
+            final_feat = self.mlp(flattened)  # [out_dim]
+            out_feats.append(final_feat)
+
+        return torch.stack(out_feats, dim=0)  # [N, out_dim]
+
+
+
+def count_parameters(model):
+    """
+    Count the total number of trainable parameters in a PyTorch model.
+    Args:
+        model (torch.nn.Module): The model to count parameters for.
+    Returns:
+        int: Total number of trainable parameters.
+    """
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
 
 # Example usage:
 if __name__ == "__main__":
-    encoder = HierarchicalSkeletalEncoder()
+    H_encoder = HierarchicalSkeletalEncoder()
+    M_encoder = WeightedMLPBasedEncoder()
+    N_encoder = NaiveMLPEncoder()
     # Dummy data for 3 frames
     detections = [
         None,
@@ -164,5 +300,16 @@ if __name__ == "__main__":
             'scores':    torch.rand(17)
         }
     ]
-    features = encoder(detections)
-    print("Output features shape:", features)  # should be [3, out_dim]
+    H_features = H_encoder(detections)
+    M_features = M_encoder(detections)
+    N_features = N_encoder(detections)
+    print("Hierarchical features shape:", H_features.shape)  # should be [3, out_dim]
+    print("MLP features shape:", M_features.shape)  # should be [3, out_dim]
+    print("Naive MLP features shape:", N_features.shape)  # should be [3, out_dim]
+    H_params = count_parameters(H_encoder)
+    W_params = count_parameters(M_encoder)
+    N_params = count_parameters(N_encoder)
+
+    print(f"HierarchicalSkeletalEncoder parameters: {H_params}")
+    print(f"WeightedMLPBasedEncoder parameters: {W_params}")
+    print(f"NaiveMLPEncoder parameters: {N_params}")
