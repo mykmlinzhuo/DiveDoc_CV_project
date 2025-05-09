@@ -3,7 +3,7 @@ bs_train : 2
 bs_test : 1
 workers : 1
 update_iter : 2
-max_epoch : 20
+max_epoch : 30
 warmup_epochs : 2
 pilot_size: 80
 

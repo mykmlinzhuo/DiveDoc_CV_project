@@ -110,9 +110,9 @@ def network_forward_train(base_model, psnet_model, decoder, regressor_delta,
     
     ############# Pose Feature #############
     
-    print(type(pose_detections_1), len(pose_detections_1))
-    print(pose_detections_1[0].keys())   # 看 dict 里有什么字段
-    print(pose_detections_1[0]['keypoints'].shape)
+    # print(type(pose_detections_1), len(pose_detections_1))
+    # print(pose_detections_1[0].keys())   # 看 dict 里有什么字段
+    # print(pose_detections_1[0]['keypoints'].shape)
     
     device = video_1.device
     
@@ -139,9 +139,9 @@ def network_forward_train(base_model, psnet_model, decoder, regressor_delta,
     
     ############# Mask and I3D Feature Fusion #############
     # add
-    print("dyn:", com_feature_12_u.shape)   # 动态分支
-    print("mask:", mask_feature.shape)      # 分割掩码
-    print("pose:", pose_feature.shape)      # 姿态特征
+    # print("dyn:", com_feature_12_u.shape)   # 动态分支
+    # print("mask:", mask_feature.shape)      # 分割掩码
+    # print("pose:", pose_feature.shape)      # 姿态特征
     
     start_idx = list(range(0, 90, 10))  # [0,10,20,...80]
     pose_seg = []
@@ -170,7 +170,7 @@ def network_forward_train(base_model, psnet_model, decoder, regressor_delta,
         pose_seg.append(selected_frames)
 
     pose_seg = torch.stack(pose_seg, dim=1)  # [B2, 9, pose_dim]
-    print("pose_refine:", pose_seg.shape)
+    # print("pose_refine:", pose_seg.shape)
     
     dyn = com_feature_12_u * torch.sigmoid(mask_feature)
     
@@ -295,9 +295,9 @@ def network_forward_train(base_model, psnet_model, decoder, regressor_delta,
     delta1 = regressor_delta[0](decoder_12_21)
     delta2 = regressor_delta[1](v_12_21)
     delta_pose = regressor_delta[3](pose_cross)
-    print("delta1:", delta1.shape)  # [batch*2, 24]
-    print("delta2:", delta2.shape)  # [batch*2, 8]
-    print("delta_pose:", delta_pose.shape)  # [batch*2, 8]
+    # print("delta1:", delta1.shape)  # [batch*2, 24]
+    # print("delta2:", delta2.shape)  # [batch*2, 8]
+    # print("delta_pose:", delta_pose.shape)  # [batch*2, 8]
     delta1_1 = delta1[:,:12].mean(1)
     delta1_2 = delta1[:,12:24].mean(1)
     delta1_3 = delta1[:,24:].mean(1)
@@ -594,9 +594,9 @@ def network_forward_test(base_model, psnet_model, decoder, regressor_delta, vide
         delta2 = regressor_delta[1](v_12_21)
         delta_pose = regressor_delta[3](pose_cross)
         
-        print("delta1:", delta1.shape)  # [batch*2, 24]
-        print("delta2:", delta2.shape)  # [batch*2, 8]
-        print("delta_pose:", delta_pose.shape)  # [batch*2, 8]
+        # print("delta1:", delta1.shape)  # [batch*2, 24]
+        # print("delta2:", delta2.shape)  # [batch*2, 8]
+        # print("delta_pose:", delta_pose.shape)  # [batch*2, 8]
         delta1_1 = delta1[:,:12].mean(1)
         delta1_2 = delta1[:,12:24].mean(1)
         delta1_3 = delta1[:,24:].mean(1)
