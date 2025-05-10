@@ -7,7 +7,7 @@ def main():
     # 直接调用你们的训练脚本 main.py
     # 等价于：python main.py --archs trial1 --benchmark FineDiving
     import sys
-    sys.argv = ["main.py", "--archs", "trail", "--benchmark", "FineDiving"]
+    sys.argv = ["main.py", "--archs", "naivemlp", "--benchmark", "FineDiving"]
 
     # 启动 main.py 中的训练流程
     import main  # 确保 main.py 的入口函数名是 main()

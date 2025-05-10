@@ -192,11 +192,11 @@ def train_net(args, rank, world_size):
             
             # debug
             # print("[DEBUG-TrainBatch] pose_detections_1:", pose_detections_1)
-            for frame in pose_detections_1:
-                if frame is not None:
-                    print("[DEBUG-TrainBatch] keypoints shape:", frame['keypoints'].shape)
-                    print("[DEBUG-TrainBatch] scores shape:", frame['scores'].shape)
-                    break
+            # for frame in pose_detections_1:
+            #     if frame is not None:
+            #         print("[DEBUG-TrainBatch] keypoints shape:", frame['keypoints'].shape)
+            #         print("[DEBUG-TrainBatch] scores shape:", frame['scores'].shape)
+            #         break
 
             # forward
             res = helper.network_forward_train(base_model, psnet_model, decoder, regressor_delta, 
@@ -287,7 +287,7 @@ def train_net(args, rank, world_size):
                 })
 
             
-        if epoch < 50 and (epoch+1)%4==0 or epoch>=50 and (epoch+1)%2==0 or epoch == 0:
+        if epoch < 50 and (epoch+1)%2==0 or epoch>=50 and (epoch+1)%2==0 or epoch == 0:
             validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
                      dim_reducer1, dim_reducer2, Pose_Encoder, Final_MLP,
                         test_dataloader, epoch, optimizer, args, rank, world_size)
@@ -473,7 +473,7 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
                 print('-----New best found!-----')
                 helper.save_checkpoint(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter, 
                                    dim_reducer1,dim_reducer2,
-                                   optimizer, epoch, epoch_best_aqa, rho_best, L2_min, RL2_min, 'best', args)
+                                   optimizer, epoch, epoch_best_aqa, rho_best, L2_min, RL2_min, Pose_Encoder, Final_MLP, 'best', args)
             helper.save_outputs(gathered_pred_scores, gathered_true_scores, args, epoch)
             print("Predicted final scores (after voting):", gathered_pred_scores[:20])
             print("Ground truth scores:", gathered_true_scores[:20])

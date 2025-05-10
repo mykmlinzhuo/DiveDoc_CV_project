@@ -30,3 +30,5 @@ utils/__pycache__/
 experiments
 
 VitPose/yolo8n.pt
+
+VitPose/demo
