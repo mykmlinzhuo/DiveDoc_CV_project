@@ -1,13 +1,13 @@
 # basic
-bs_train : 2
-bs_test : 1
+bs_train : 4
+bs_test : 2
 workers : 1
 update_iter : 2
 max_epoch : 100
 warmup_epochs : 10
-pose_embedding: 2
+pose_embedding: 3
 
-archs: 'trial1'
+archs: 'weighted_mlp'
 prefix: 'try'
 
 # model
@@ -38,7 +38,7 @@ step_num : 3
 prob_tas_threshold : 1.0
 random_choosing : False
 action_number_choosing: True
-cuda_device : 6
+cuda_device : 0
 resume: False
 temporal_shift_min : -3
 temporal_shift_max : 0
