@@ -13,6 +13,7 @@ def get_args():
     parser.add_argument('--test', action='store_true', default=True)
     parser.add_argument('--ckpts', type=str, default='None', help='test used ckpt path')
     parser.add_argument('--pilot_size', type=int, default=0, help='pilot study: if > 0, subsample small dataset')
+    parser.add_argument('--pose_embedding', type=int, default=1, help='which embedding to use')
     args = parser.parse_args()
 
     return args
@@ -20,6 +21,7 @@ def get_args():
 def setup(args):
 
     args.config = '{}_FineParser.yaml'.format(args.benchmark)
+    print(args.archs, args.benchmark, args.prefix)
     args.experiment_path = os.path.join('./experiments',args.archs, args.benchmark, args.prefix)
     if args.resume:
         cfg_path = os.path.join(args.experiment_path,'config.yaml')

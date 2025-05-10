@@ -12,18 +12,58 @@ from utils.misc import segment_iou, cal_tiou, seg_pool_1d, seg_pool_3d
 from einops import rearrange
 import segmentation_models_pytorch as smp
 import wandb
+from typing import List, Dict
 
 from datetime import datetime
 settigns_date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 end = time.time()
 
+def batch_pose_encode(pose_encoder, pose_batch):
+    feats = []
+    for pose_seq in pose_batch:          # pose_seq  : List[dict] (长度=T)
+        feat = pose_encoder(pose_seq)    # 返回 [T, D] 或自己定义
+        feats.append(feat)
+    return torch.stack(feats, dim=0)     # [B, T, D]
+
+def split_batch_detections(detections: List[Dict]) -> List[List[Dict]]:
+    """
+    detections: List length T, each is dict of batch.
+    Return: List length B, each is List length T of single-frame dicts.
+    """
+    T = len(detections)
+    # B = batch size = detections[0]['keypoints'].shape[0]
+    B = detections[0]['keypoints'].size(0)
+
+    # 初始化 B 条空列表
+    per_sample = [[] for _ in range(B)]
+
+    for t in range(T):
+        det = detections[t]
+        kpts   = det['keypoints']  # [B,17,2]
+        scores = det['scores']     # [B,17]
+        labels = det['labels']     # [B,17]
+        bbox   = det['bbox']       # [B,4]
+
+        for b in range(B):
+            per_sample[b].append({
+                'keypoints': kpts[b],     # [17,2]
+                'scores':    scores[b],   # [17]
+                'labels':    labels[b],   # [17]
+                'bbox':      bbox[b],     # [4]
+            })
+
+    return per_sample
+
 def network_forward_train(base_model, psnet_model, decoder, regressor_delta, 
                           dim_reducer1, dim_reducer2, pred_scores,
-                          video_1, label_1_score, video_2, label_2_score, video_1_mask, video_2_mask, mse, optimizer, opti_flag,
+                          video_1, label_1_score, video_2, label_2_score, video_1_mask, video_2_mask, pose_detections_1, pose_detections_2, pose_encoder, 
+                          mse, optimizer, opti_flag,
                           epoch, batch_idx, batch_num, args, label_1_tas, label_2_tas, bce,
                           pred_tious_5, pred_tious_75, dim_reducer3, video_encoder, segmenter, segment_metrics, 
-                          rank, train_len, focal_loss, scheduler, n_iter_per_epoch):
+                          rank, train_len, focal_loss, scheduler, n_iter_per_epoch,
+                          Final_MLP,
+                          ):
     global end
     
     start = time.time()
@@ -68,11 +108,77 @@ def network_forward_train(base_model, psnet_model, decoder, regressor_delta,
     video_2_fea = com_feature_12[:,:,com_feature_12.shape[2] // 2:]
     com_feature_12_u = torch.cat((video_1_fea, video_2_fea), 0)
     
+    ############# Pose Feature #############
+    
+    # print(type(pose_detections_1), len(pose_detections_1))
+    # print(pose_detections_1[0].keys())   # 看 dict 里有什么字段
+    # print(pose_detections_1[0]['keypoints'].shape)
+    
+    device = video_1.device
+    
+    pose_list_batch1 = split_batch_detections(pose_detections_1)  # List[List[dict]]
+    pose_list_batch2 = split_batch_detections(pose_detections_2)
+    for seq in pose_list_batch1:
+        for frame_dict in seq:
+            frame_dict['keypoints'] = frame_dict['keypoints'].to(device)
+            frame_dict['scores']    = frame_dict['scores'].to(device)
+            frame_dict['labels']    = frame_dict['labels'].to(device)
+            frame_dict['bbox']      = frame_dict['bbox'].to(device)
+
+    for seq in pose_list_batch2:
+        for frame_dict in seq:
+            frame_dict['keypoints'] = frame_dict['keypoints'].to(device)
+            frame_dict['scores']    = frame_dict['scores'].to(device)
+            frame_dict['labels']    = frame_dict['labels'].to(device)
+            frame_dict['bbox']      = frame_dict['bbox'].to(device)
+    
+    pose_feature1 = batch_pose_encode(pose_encoder, pose_list_batch1)
+    pose_feature2 = batch_pose_encode(pose_encoder, pose_list_batch2)
+    
+    pose_feature = torch.cat((pose_feature1, pose_feature2), 0)  # cat成 (batch*2, 96, pose_dim)
+    
     ############# Mask and I3D Feature Fusion #############
     # add
-    u_fea_96 = com_feature_12_u*torch.sigmoid(mask_feature)
-    video_1_fea = u_fea_96[:u_fea_96.shape[0]//2]
-    video_2_fea = u_fea_96[u_fea_96.shape[0]//2:]
+    # print("dyn:", com_feature_12_u.shape)   # 动态分支
+    # print("mask:", mask_feature.shape)      # 分割掩码
+    # print("pose:", pose_feature.shape)      # 姿态特征
+    
+    start_idx = list(range(0, 90, 10))  # [0,10,20,...80]
+    pose_seg = []
+
+    for i in start_idx:
+        pose_clip = pose_feature[:, i:i+16, :]  # [B2, 16, pose_dim]
+
+        selected_frames = []
+
+        for b in range(pose_clip.shape[0]):  # 对每个sample
+            found = False
+            for t in range(pose_clip.shape[1]):  # 16帧内
+                frame_feat = pose_clip[b, t]  # [pose_dim]
+
+               # 判断是不是非零（可以设一个小阈值，避免小数误差）
+                if frame_feat.abs().sum() > 1e-6:
+                    selected_frames.append(frame_feat)
+                    found = True
+                    break
+
+            if not found:
+                # 如果16帧都全0，那就取第0帧
+                selected_frames.append(pose_clip[b, 0])
+
+        selected_frames = torch.stack(selected_frames, dim=0)  # [B2, pose_dim]
+        pose_seg.append(selected_frames)
+
+    pose_seg = torch.stack(pose_seg, dim=1)  # [B2, 9, pose_dim]
+    # print("pose_refine:", pose_seg.shape)
+    
+    dyn = com_feature_12_u * torch.sigmoid(mask_feature)
+    
+    u_fea = torch.cat([dyn, pose_seg], dim= -1) 
+    
+    half = u_fea.shape[0] // 2
+    video_1_fea = u_fea[:half]
+    video_2_fea = u_fea[half:]
     
     ############# Predict transit #############
     y1 = psnet_model(video_1_fea)
@@ -176,12 +282,22 @@ def network_forward_train(base_model, psnet_model, decoder, regressor_delta,
 
     decoder_video_12_map = torch.cat(decoder_video_12_map_list, 1)
     decoder_video_21_map = torch.cat(decoder_video_21_map_list, 1)
-   
+    
+    ############# Pose Cross Attention #############
+    Pose_Decoder = decoder[4]
+    pose_cross12 = Pose_Decoder(pose_feature1, pose_feature2)
+    pose_cross21 = Pose_Decoder(pose_feature2, pose_feature1)
+    pose_cross = torch.cat((pose_cross12, pose_cross21), dim=0)  # (batch*2, T, pose_dim)
+    
     ############# Fine-grained Contrastive Regression #############
     decoder_12_21 = torch.cat((decoder_video_12_map, decoder_video_21_map), 0)
 
     delta1 = regressor_delta[0](decoder_12_21)
     delta2 = regressor_delta[1](v_12_21)
+    delta_pose = regressor_delta[3](pose_cross)
+    # print("delta1:", delta1.shape)  # [batch*2, 24]
+    # print("delta2:", delta2.shape)  # [batch*2, 8]
+    # print("delta_pose:", delta_pose.shape)  # [batch*2, 8]
     delta1_1 = delta1[:,:12].mean(1)
     delta1_2 = delta1[:,12:24].mean(1)
     delta1_3 = delta1[:,24:].mean(1)
@@ -189,13 +305,19 @@ def network_forward_train(base_model, psnet_model, decoder, regressor_delta,
     delta2_1 = delta2[:,:4].mean(1)
     delta2_2 = delta2[:,4:8].mean(1)
     delta2_3 = delta2[:,8:].mean(1)
-    delta1 = (delta1_1*3+delta1_2*5+delta1_3*2)/10
-    delta2 = (delta2_1*3+delta2_2*5+delta2_3*2)/10
-    delta=torch.cat((delta1,delta2),1)
-    delta = delta.mean(1).unsqueeze(-1) 
+    delta_dynamic = (delta1_1*3+delta1_2*5+delta1_3*2)/10
+    delta_static = (delta2_1*3+delta2_2*5+delta2_3*2)/10
+    delta_pose = delta_pose.mean(1)
+    delta_all = torch.stack([delta_dynamic, delta_static, delta_pose], dim=1)
 
-    loss_aqa = mse(delta[:delta.shape[0] // 2], (label_1_score - label_2_score)) \
-        + mse(delta[delta.shape[0] // 2:], (label_2_score - label_1_score))
+    # 再对 3 个通道做平均，得到 [batch,]
+    delta = delta_all.mean(dim=1, keepdim=True)  # [batch,1]
+
+    # 这样 delta 就是最终的误差增量，不需要再过 MLP 了
+    final_delta = delta.squeeze(-1)  # [batch,1]
+
+    loss_aqa = mse(final_delta[:final_delta.shape[0] // 2], (label_1_score - label_2_score)) \
+        + mse(final_delta[final_delta.shape[0] // 2:], (label_2_score - label_1_score))
 
     loss = loss_aqa + loss_tas + loss_mask
     loss.backward()
@@ -208,7 +330,7 @@ def network_forward_train(base_model, psnet_model, decoder, regressor_delta,
 
     end = time.time()
     batch_time = end - start
-    score = (delta[:delta.shape[0] // 2].detach() + label_2_score)  
+    score = (final_delta[:final_delta.shape[0] // 2].detach() + label_2_score)
     pred_scores.extend([i.item() for i in score])
 
     tIoU_results = []
@@ -247,14 +369,15 @@ def network_forward_train(base_model, psnet_model, decoder, regressor_delta,
 
 def network_forward_test(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter, 
                          dim_reducer1, dim_reducer2, pred_scores,
-                         video_1, video_2_list, label_2_score_list, video_1_mask, video_2_mask_list,
+                         video_1, video_2_list, label_2_score_list, video_1_mask, video_2_mask_list, pose_detections_1, pose_detections_2_list,
                          args, label_1_tas, label_2_tas_list,
                          pred_tious_test_5, pred_tious_test_75, segment_metrics,
-                         mse, bce, focal_loss, label_1_score):
+                         mse, bce, focal_loss, label_1_score,
+                         pose_encoder, Final_MLP):
     score = 0
     tIoU_results = []
     t_loss = [0.0,0.0,0.0]
-    for idx, (video_2, video_2_mask, label_2_score, label_2_tas) in enumerate(zip(video_2_list, video_2_mask_list, label_2_score_list, label_2_tas_list)):
+    for idx, (video_2, video_2_mask, label_2_score, label_2_tas, pose_detections_2) in enumerate(zip(video_2_list, video_2_mask_list, label_2_score_list, label_2_tas_list, pose_detections_2_list)):
         
         ############# Segmentation #############
     
@@ -296,10 +419,67 @@ def network_forward_test(base_model, psnet_model, decoder, regressor_delta, vide
         video_2_fea = com_feature_12[:,:,com_feature_12.shape[2] // 2:]
         com_feature_12_u = torch.cat((video_1_fea, video_2_fea), 0)
 
+        ############# Pose Feature #############
+        
+        device = video_1.device
+        
+        pose_list_batch1 = split_batch_detections(pose_detections_1)  # List[List[dict]]
+        pose_list_batch2 = split_batch_detections(pose_detections_2)
+        
+        for seq in pose_list_batch1:
+            for frame_dict in seq:
+                frame_dict['keypoints'] = frame_dict['keypoints'].to(device)
+                frame_dict['scores']    = frame_dict['scores'].to(device)
+                frame_dict['labels']    = frame_dict['labels'].to(device)
+                frame_dict['bbox']      = frame_dict['bbox'].to(device)
+
+        for seq in pose_list_batch2:
+            for frame_dict in seq:
+                frame_dict['keypoints'] = frame_dict['keypoints'].to(device)
+                frame_dict['scores']    = frame_dict['scores'].to(device)
+                frame_dict['labels']    = frame_dict['labels'].to(device)
+                frame_dict['bbox']      = frame_dict['bbox'].to(device)
+    
+        pose_feature1 = batch_pose_encode(pose_encoder, pose_list_batch1)
+        pose_feature2 = batch_pose_encode(pose_encoder, pose_list_batch2)
+        pose_feature = torch.cat((pose_feature1, pose_feature2), 0)
+        
         ############# Mask and I3D Feature Fusion #############
-        u_fea_96 = com_feature_12_u*torch.sigmoid(mask_feature)
-        video_1_fea = u_fea_96[:u_fea_96.shape[0]//2]
-        video_2_fea = u_fea_96[u_fea_96.shape[0]//2:]
+        start_idx = list(range(0, 90, 10))  # [0,10,20,...80]
+        pose_seg = []
+
+        for i in start_idx:
+            pose_clip = pose_feature[:, i:i+16, :]  # [B2, 16, pose_dim]
+
+            selected_frames = []
+
+            for b in range(pose_clip.shape[0]):  # 对每个sample
+                found = False
+                for t in range(pose_clip.shape[1]):  # 16帧内
+                    frame_feat = pose_clip[b, t]  # [pose_dim]
+
+                   # 判断是不是非零（可以设一个小阈值，避免小数误差）
+                    if frame_feat.abs().sum() > 1e-6:
+                        selected_frames.append(frame_feat)
+                        found = True
+                        break
+
+                if not found:
+                    # 如果16帧都全0，那就取第0帧
+                    selected_frames.append(pose_clip[b, 0])
+
+            selected_frames = torch.stack(selected_frames, dim=0)  # [B2, pose_dim]
+            pose_seg.append(selected_frames)
+
+        pose_seg = torch.stack(pose_seg, dim= 1)  # [B2, 9, pose_dim]
+
+        dyn = com_feature_12_u * torch.sigmoid(mask_feature)
+
+        u_fea = torch.cat([dyn, pose_seg], dim= -1) 
+
+        half = u_fea.shape[0] // 2
+        video_1_fea = u_fea[:half]
+        video_2_fea = u_fea[half:]
         
         ############# Predict transit #############
         y1 = psnet_model(video_1_fea)
@@ -401,38 +581,51 @@ def network_forward_test(base_model, psnet_model, decoder, regressor_delta, vide
         decoder_video_12_map = torch.cat(decoder_video_12_map_list, 1)
         decoder_video_21_map = torch.cat(decoder_video_21_map_list, 1)
         
+        ############# Pose Cross Attention #############
+        Pose_Decoder = decoder[4]
 
+        pose_cross12 = Pose_Decoder(pose_feature1, pose_feature2)
+        pose_cross21 = Pose_Decoder(pose_feature2, pose_feature1)
+        pose_cross = torch.cat((pose_cross12, pose_cross21), dim=0)
         ############# Fine-grained Contrastive Regression #############
         decoder_12_21 = torch.cat((decoder_video_12_map, decoder_video_21_map), 0)
 
         delta1 = regressor_delta[0](decoder_12_21)
         delta2 = regressor_delta[1](v_12_21)
+        delta_pose = regressor_delta[3](pose_cross)
         
+        # print("delta1:", delta1.shape)  # [batch*2, 24]
+        # print("delta2:", delta2.shape)  # [batch*2, 8]
+        # print("delta_pose:", delta_pose.shape)  # [batch*2, 8]
         delta1_1 = delta1[:,:12].mean(1)
         delta1_2 = delta1[:,12:24].mean(1)
         delta1_3 = delta1[:,24:].mean(1)
-        
+    
         delta2_1 = delta2[:,:4].mean(1)
         delta2_2 = delta2[:,4:8].mean(1)
         delta2_3 = delta2[:,8:].mean(1)
-        delta1 = (delta1_1*3+delta1_2*5+delta1_3*2)/10
-        delta2 = (delta2_1*3+delta2_2*5+delta2_3*2)/10
-        delta=torch.cat((delta1,delta2),1)
-        delta = delta.mean(1).unsqueeze(-1) 
         
-        predicted_score = delta[:delta.shape[0] // 2].detach() + label_2_score
+        delta_pose_1 = delta_pose[:,:32].mean(1)
+        delta_pose_2 = delta_pose[:,32:64].mean(1)
+        delta_pose_3 = delta_pose[:,64:].mean(1)
         
-        # if idx == 0:  # 只打印第一个exemplar（防止太多）
-        #     print(f"[DEBUG] predicted_score.shape: {predicted_score.shape}")
-        #     print(f"[DEBUG] predicted_score values:", predicted_score.squeeze().tolist())
+        delta_dynamic = (delta1_1*3+delta1_2*5+delta1_3*2)/10
+        delta_static = (delta2_1*3+delta2_2*5+delta2_3*2)/10
+        delta_pose = (delta_pose_1*3+delta_pose_2*5+delta_pose_3*2)/10
+        
+        delta_all = torch.stack([delta_dynamic, delta_static, delta_pose], dim=1)
+
+        # 再对 3 个通道做平均，得到 [batch,]
+        delta = delta_all.mean(dim=1, keepdim=True)  # [batch,1]
+
+        # 这样 delta 就是最终的误差增量，不需要再过 MLP 了
+        final_delta = delta.squeeze(-1)  # [batch,1]
+        
+        predicted_score = final_delta[:final_delta.shape[0] // 2].detach() + label_2_score
 
         score += predicted_score
-        # score += (delta[:delta.shape[0] // 2].detach() + label_2_score)
-        # predicted_score = delta[:delta.shape[0] // 2].detach() + label_2_score
-        # for i in range(predicted_score.shape[0]):
-        #     pred_scores.append(predicted_score[i].item())
         
-        loss_aqa = mse(delta[:delta.shape[0] // 2], (label_1_score - label_2_score))
+        loss_aqa = mse(final_delta[:final_delta.shape[0] // 2], (label_1_score - label_2_score))
         
         t_loss[0] += loss_aqa
         t_loss[1] += loss_tas
@@ -457,8 +650,8 @@ def network_forward_test(base_model, psnet_model, decoder, regressor_delta, vide
 
 
 def save_checkpoint(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
-                    dim_reducer1,dim_reducer2,
-                    optimizer, epoch, epoch_best_aqa, rho_best, L2_min, RL2_min, prefix, args):
+                    dim_reducer1,dim_reducer2, 
+                    optimizer, epoch, epoch_best_aqa, rho_best, L2_min, RL2_min, Pose_Encoder, Final_MLP, prefix, args):
     torch.save({
         'base_model': base_model.state_dict(),
         'psnet_model': psnet_model.state_dict(),
@@ -466,9 +659,11 @@ def save_checkpoint(base_model, psnet_model, decoder, regressor_delta, video_enc
         'decoder2': decoder[1].state_dict(),
         'decoder3': decoder[2].state_dict(),
         'decoder4': decoder[3].state_dict(),
+        'pose_decoder': decoder[4].state_dict(),
         'regressor_delta1': regressor_delta[0].state_dict(),
         'regressor_delta2': regressor_delta[1].state_dict(),
         'regressor_delta3': regressor_delta[2].state_dict(),
+        'regressor_delta_pose': regressor_delta[3].state_dict(),
         'video_encoder': video_encoder.state_dict(),
         'dim_reducer3': dim_reducer3.state_dict(),
         'dim_reducer1': dim_reducer1.state_dict(),
@@ -480,6 +675,8 @@ def save_checkpoint(base_model, psnet_model, decoder, regressor_delta, video_enc
         'L2_min': L2_min,
         'RL2_min': RL2_min,
         'segmenter': segmenter.state_dict(),
+        'pose_encoder': Pose_Encoder.state_dict(),
+        'final_mlp': Final_MLP.state_dict(),
     }, os.path.join(args.experiment_path, prefix + '.pth'))
 
 def save_outputs(pred_scores, true_scores, args, epoch):

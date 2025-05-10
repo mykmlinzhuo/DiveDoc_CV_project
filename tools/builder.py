@@ -15,9 +15,13 @@ from models import decoder_fuser
 from models import MLP_score, MLP_twist, I3D_VOS
 from models import MaskEncoder, AttentionFusion, FeatureFusionModule, VideoEncoder, C_channel
 from models.PS import PSNet, Pred_twistoffset
+from PoseEmbedding.pose_embedding import HierarchicalSkeletalEncoder
+from PoseEmbedding.pose_embedding import WeightedMLPBasedEncoder
+from PoseEmbedding.pose_embedding import NaiveMLPEncoder
 from datasets.FineDiving_Pair import DebugDataset
 import torch
 import torchvision.transforms.functional as F
+import torch.nn as nn
 import random
 import PIL
 from timm.scheduler.cosine_lr import CosineLRScheduler
@@ -95,13 +99,23 @@ def model_builder(args):
     dim_reducer3 = C_channel(in_channel=4)
     segmenter = I3D_VOS(num_classes=400)
     Video_Encoder = VideoEncoder()
+    type_of_pose_embedding = args.pose_embedding
+    if type_of_pose_embedding == 1:
+        Pose_Encoder = HierarchicalSkeletalEncoder()
+    elif type_of_pose_embedding == 2:
+        Pose_Encoder = NaiveMLPEncoder()
+    elif type_of_pose_embedding == 3:
+        Pose_Encoder = WeightedMLPBasedEncoder()
+    Pose_Decoder = decoder_fuser(dim=128, num_heads=8, num_layers=3)
+    Regressor_delta_pose = MLP_score(in_channel=128, out_channel=1)
+    Final_MLP = nn.Sequential(nn.Linear(3, 1))
 
-    return base_model, PSNet_model, [Decoder_vit1, Decoder_vit2, Decoder_vit3,Decoder_vit4], \
-        [Regressor_delta1, Regressor_delta2, Regressor_delta3], dim_reducer1, dim_reducer2,\
-            Video_Encoder, dim_reducer3, segmenter
+    return base_model, PSNet_model, [Decoder_vit1, Decoder_vit2, Decoder_vit3,Decoder_vit4,Pose_Decoder], \
+        [Regressor_delta1, Regressor_delta2, Regressor_delta3, Regressor_delta_pose], dim_reducer1, dim_reducer2,\
+            Video_Encoder, dim_reducer3, segmenter, Pose_Encoder, Final_MLP
 
 def build_opti_sche(base_model, psnet_model, decoder, regressor_delta, dim_reducer1, dim_reducer2, 
-                    dim_reducer3, video_encoder, segmenter, args, n_iter_per_epoch):
+                    dim_reducer3, video_encoder, segmenter, Pose_Encoder, Final_MLP, args, n_iter_per_epoch):
     if args.optimizer == 'Adam':
         optimizer = optim.Adam([
             {'params': base_model.parameters(), 'lr': args.base_lr * args.lr_factor},
@@ -110,14 +124,18 @@ def build_opti_sche(base_model, psnet_model, decoder, regressor_delta, dim_reduc
             {'params': decoder[1].parameters()},
             {'params': decoder[2].parameters()},
             {'params': decoder[3].parameters()},
+            {'params': decoder[4].parameters()},
             {'params': regressor_delta[0].parameters()},
             {'params': regressor_delta[1].parameters()},
             {'params': regressor_delta[2].parameters()},
+            {'params': regressor_delta[3].parameters()},
             {'params': dim_reducer3.parameters()},
             {'params': segmenter.parameters()},
             {'params': video_encoder.parameters()},
             {'params': dim_reducer1.parameters()},
-            {'params': dim_reducer2.parameters()}
+            {'params': dim_reducer2.parameters()},
+            {'params': Pose_Encoder.parameters()},
+            {'params': Final_MLP.parameters()}
         ], lr=args.base_lr, weight_decay=args.weight_decay)
     else:
         raise NotImplementedError()
@@ -135,7 +153,7 @@ def build_opti_sche(base_model, psnet_model, decoder, regressor_delta, dim_reduc
 
 
 def resume_train(base_model, psnet_model, decoder,
-                            dim_reducer1, dim_reducer2, optimizer, dim_reducer3,regressor_delta, segmenter,video_encoder, args):
+                            dim_reducer1, dim_reducer2, optimizer, dim_reducer3, regressor_delta, segmenter, video_encoder, Pose_Encoder, Final_MLP, args):
     ckpt_path = os.path.join(args.experiment_path, 'best.pth')
     if not os.path.exists(ckpt_path):
         print('no checkpoint file from path %s...' % ckpt_path)
@@ -143,7 +161,7 @@ def resume_train(base_model, psnet_model, decoder,
     print('Loading weights from %s...' % ckpt_path)
 
     # load state dict
-    state_dict = torch.load(ckpt_path, map_location='cpu')
+    state_dict = torch.load(ckpt_path, map_location='cpu', weights_only=False)
 
     # parameter resume of base model
     base_ckpt = {k.replace("module.", ""): v for k, v in state_dict['base_model'].items()}
@@ -160,12 +178,16 @@ def resume_train(base_model, psnet_model, decoder,
     decoder[2].load_state_dict(decoder_ckpt1)
     decoder_ckpt1 = {k.replace("module.", ""): v for k, v in state_dict['decoder4'].items()}
     decoder[3].load_state_dict(decoder_ckpt1)
+    decoder_ckpt = {k.replace("module.", ""): v for k, v in state_dict['pose_decoder'].items()}
+    decoder[4].load_state_dict(decoder_ckpt)
     regressor_delta_ckpt = {k.replace("module.", ""): v for k, v in state_dict['regressor_delta1'].items()}
     regressor_delta[0].load_state_dict(regressor_delta_ckpt)
     regressor_delta_ckpt = {k.replace("module.", ""): v for k, v in state_dict['regressor_delta2'].items()}
     regressor_delta[1].load_state_dict(regressor_delta_ckpt)
     regressor_delta_ckpt = {k.replace("module.", ""): v for k, v in state_dict['regressor_delta3'].items()}
     regressor_delta[2].load_state_dict(regressor_delta_ckpt)
+    regressor_delta_ckpt = {k.replace("module.", ""): v for k, v in state_dict['regressor_delta_pose'].items()}
+    regressor_delta[3].load_state_dict(regressor_delta_ckpt)
 
     mask_encoder_ckpt = {k.replace("module.", ""): v for k, v in state_dict['segmenter'].items()}
     segmenter.load_state_dict(mask_encoder_ckpt)
@@ -179,6 +201,12 @@ def resume_train(base_model, psnet_model, decoder,
     video_encoder.load_state_dict(mask_encoder_ckpt)
     dim_reducer2_ckpt = {k.replace("module.", ""): v for k, v in state_dict['dim_reducer2'].items()}
     dim_reducer2.load_state_dict(dim_reducer2_ckpt)
+    
+    pose_encoder_ckpt = {k.replace("module.", ""): v for k, v in state_dict['pose_encoder'].items()}
+    Pose_Encoder.load_state_dict(pose_encoder_ckpt)
+
+    final_mlp_ckpt = {k.replace("module.", ""): v for k, v in state_dict['final_mlp'].items()}
+    Final_MLP.load_state_dict(final_mlp_ckpt)
 
     # optimizer
     optimizer.load_state_dict(state_dict['optimizer'])
@@ -194,7 +222,7 @@ def resume_train(base_model, psnet_model, decoder,
 
 
 def load_model(base_model, psnet_model, decoder,
-                            dim_reducer1, dim_reducer2, dim_reducer3,regressor_delta, segmenter,video_encoder,args):
+                            dim_reducer1, dim_reducer2, dim_reducer3, regressor_delta, segmenter, video_encoder, Pose_Encoder, Final_MLP, args):
     ckpt_path = os.path.join(args.experiment_path, 'best.pth')
     if not os.path.exists(ckpt_path):
         raise NotImplementedError('no checkpoint file from path %s...' % ckpt_path)
@@ -218,12 +246,16 @@ def load_model(base_model, psnet_model, decoder,
     decoder[2].load_state_dict(decoder_ckpt1)
     decoder_ckpt1 = {k.replace("module.", ""): v for k, v in state_dict['decoder4'].items()}
     decoder[3].load_state_dict(decoder_ckpt1)
+    decoder_ckpt = {k.replace("module.", ""): v for k, v in state_dict['pose_decoder'].items()}
+    decoder[4].load_state_dict(decoder_ckpt)
     regressor_delta_ckpt = {k.replace("module.", ""): v for k, v in state_dict['regressor_delta1'].items()}
     regressor_delta[0].load_state_dict(regressor_delta_ckpt)
     regressor_delta_ckpt = {k.replace("module.", ""): v for k, v in state_dict['regressor_delta2'].items()}
     regressor_delta[1].load_state_dict(regressor_delta_ckpt)
     regressor_delta_ckpt = {k.replace("module.", ""): v for k, v in state_dict['regressor_delta3'].items()}
     regressor_delta[2].load_state_dict(regressor_delta_ckpt)
+    regressor_delta_ckpt = {k.replace("module.", ""): v for k, v in state_dict['regressor_delta_pose'].items()}
+    regressor_delta[3].load_state_dict(regressor_delta_ckpt)
 
     mask_encoder_ckpt = {k.replace("module.", ""): v for k, v in state_dict['segmenter'].items()}
     segmenter.load_state_dict(mask_encoder_ckpt)
@@ -237,7 +269,12 @@ def load_model(base_model, psnet_model, decoder,
     dim_reducer2.load_state_dict(dim_reducer2_ckpt)
     mask_encoder_ckpt = {k.replace("module.", ""): v for k, v in state_dict['video_encoder'].items()}
     video_encoder.load_state_dict(mask_encoder_ckpt)
-
+    
+    pose_encoder_ckpt = {k.replace("module.", ""): v for k, v in state_dict['pose_encoder'].items()}
+    Pose_Encoder.load_state_dict(pose_encoder_ckpt)
+    
+    final_mlp_ckpt = {k.replace("module.", ""): v for k, v in state_dict['final_mlp'].items()}
+    Final_MLP.load_state_dict(final_mlp_ckpt)
 
     epoch_best_aqa = state_dict['epoch_best_aqa']
     rho_best = state_dict['rho_best']

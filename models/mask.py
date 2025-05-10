@@ -126,7 +126,7 @@ class C_channel(nn.Module):
         super(C_channel, self).__init__()
         self.inc = inconv(in_channel, 8)
         self.down1 = double_conv(8, 12)
-        self.layer0 = nn.Linear(1024, 512)
+        self.layer0 = nn.Linear(1152, 512)
         self.layer1 = nn.Linear(512, 256)
         self.layer2 = nn.Linear(256, 64)
         self.activation_1 = nn.ReLU()
