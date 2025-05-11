@@ -16,6 +16,8 @@ from models import MLP_score, MLP_twist, I3D_VOS
 from models import MaskEncoder, AttentionFusion, FeatureFusionModule, VideoEncoder, C_channel
 from models.PS import PSNet, Pred_twistoffset
 from PoseEmbedding.pose_embedding import HierarchicalSkeletalEncoder
+from PoseEmbedding.pose_embedding import OptimizedHierarchicalEncoder
+from PoseEmbedding.pose_embedding import FullyOptimizedHierarchicalEncoder
 from PoseEmbedding.pose_embedding import WeightedMLPBasedEncoder
 from PoseEmbedding.pose_embedding import NaiveMLPEncoder
 from datasets.FineDiving_Pair import DebugDataset
@@ -106,6 +108,10 @@ def model_builder(args):
         Pose_Encoder = NaiveMLPEncoder()
     elif type_of_pose_embedding == 3:
         Pose_Encoder = WeightedMLPBasedEncoder()
+    elif type_of_pose_embedding == 4:
+        Pose_Encoder = OptimizedHierarchicalEncoder()
+    elif type_of_pose_embedding == 5:
+        Pose_Encoder = FullyOptimizedHierarchicalEncoder()
     Pose_Decoder = decoder_fuser(dim=128, num_heads=8, num_layers=3)
     Regressor_delta_pose = MLP_score(in_channel=128, out_channel=1)
     Final_MLP = nn.Sequential(nn.Linear(3, 1))
