@@ -9,7 +9,7 @@ from transformers import AutoProcessor, RTDetrForObjectDetection, VitPoseForPose
 import math
 import cv2
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "1"
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 
 
 def draw_points(image, keypoints, scores, pose_keypoint_color, keypoint_score_threshold, radius, show_keypoint_weight):
