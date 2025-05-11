@@ -1,11 +1,13 @@
 # basic
-bs_train : 4
-bs_test : 2
-workers : 16
+
+bs_train : 2
+bs_test : 1
+workers : 1
+
 update_iter : 2
 max_epoch : 100
 warmup_epochs : 10
-pose_embedding: 3
+pose_embedding: 5
 
 archs: 'weighted_mlp'
 prefix: 'try'
