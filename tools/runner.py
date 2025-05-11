@@ -63,7 +63,7 @@ def train_net(args, rank, world_size):
                                                     pin_memory=True, 
                                                     worker_init_fn=misc.worker_init_fn)
         test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=args.bs_test,
-                                                    shuffle=False, num_workers=int(args.workers),
+                                                    shuffle=False, num_workers=0,
                                                     pin_memory=True, )
     
     # build model
