@@ -63,7 +63,7 @@ def train_net(args, rank, world_size):
                                                     pin_memory=True, 
                                                     worker_init_fn=misc.worker_init_fn)
         test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=args.bs_test,
-                                                    shuffle=False, num_workers=0,
+                                                    shuffle=False, num_workers=1,
                                                     pin_memory=True, )
     
     # build model
@@ -287,7 +287,7 @@ def train_net(args, rank, world_size):
                 })
 
             
-        if epoch < 50 and (epoch+1)%2==0 or epoch>=50 and (epoch+1)%2==0 or epoch == 0:
+        if epoch < 50 and (epoch+1)%10==0 or epoch>=50 and (epoch+1)%10==0 or epoch == 0:
             validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
                      dim_reducer1, dim_reducer2, Pose_Encoder, Final_MLP,
                         test_dataloader, epoch, optimizer, args, rank, world_size)
@@ -356,7 +356,7 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
         datatime_start = time.time()
 
         for batch_idx, (data, target) in enumerate(test_dataloader, 0):
-            print("[DEBUG-ValidateBatch] Batch true final scores:", data['final_score'][:5].cpu().numpy())
+            # print("[DEBUG-ValidateBatch] Batch true final scores:", data['final_score'][:5].cpu().numpy())
             datatime = time.time() - datatime_start
             start = time.time()
 
@@ -398,7 +398,7 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
                     % (epoch, args.max_epoch, batch_idx, batch_num, batch_time, datatime))
             datatime_start = time.time()
             true_scores.extend(data['final_score'].numpy())
-            print("[DEBUG-Collect] Adding to true_scores:", data['final_score'].shape)
+            # print("[DEBUG-Collect] Adding to true_scores:", data['final_score'].shape)
         
         # evaluation results
         t_loss = []

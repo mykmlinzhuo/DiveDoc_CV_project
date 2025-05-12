@@ -35,3 +35,27 @@
   | F2 Score      | 0.023285    |
   | Accuracy      | 0.952926    |
   | Recall        | 0.051676    |
+
+## 2025.5.12
+### Pose Embedding Final:
+- Naive: 2
+- Weighted: 3
+
+### Results:
+Naive: 
+- [TEST] EPOCH: -1, Loss_aqa: 23665.031250, Loss_tas: 4.978251, Loss_mask: 29.113617
+
+- [TEST] EPOCH: -1, tIoU_5: 0.500000, tIoU_75: 0.496774
+
+- [TEST] EPOCH: -1, correlation: 0.894333, L2: 25.647221, RL2: 0.005579
+- [TEST] EPOCH: -1, IOU Score: 0.067038, F1 Score: 0.116243, F2 Score: 0.081758, Accuracy: 0.479295, Recall: 0.104875
+
+Weighted:
+- [TEST] EPOCH: -1, Loss_aqa: 21594.777344, Loss_tas: 5.978729, Loss_mask: 29.210537
+
+- [TEST] EPOCH: -1, tIoU_5: 0.500000, tIoU_75: 0.490323
+  
+- [TEST] EPOCH: -1, correlation: 0.898070, L2: 24.363815, RL2: 0.005300
+
+- [TEST] EPOCH: -1, IOU Score: 0.076103, F1 Score: 0.129787, F2 Score: 0.092725, Accuracy: 0.479598, Recall: 0.118205
+

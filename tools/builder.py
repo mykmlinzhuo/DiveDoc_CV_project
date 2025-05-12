@@ -18,8 +18,8 @@ from models.PS import PSNet, Pred_twistoffset
 from PoseEmbedding.pose_embedding import HierarchicalSkeletalEncoder
 from PoseEmbedding.pose_embedding import OptimizedHierarchicalEncoder
 from PoseEmbedding.pose_embedding import FullyOptimizedHierarchicalEncoder
-from PoseEmbedding.pose_embedding import WeightedMLPBasedEncoder
-from PoseEmbedding.pose_embedding import NaiveMLPEncoder
+from PoseEmbedding.pose_embedding import WeightedMLPBasedEncoder, BatchedWeightedMLPEncoder
+from PoseEmbedding.pose_embedding import NaiveMLPEncoder, BatchedNaiveMLPEncoder
 from datasets.FineDiving_Pair import DebugDataset
 import torch
 import torchvision.transforms.functional as F
@@ -105,9 +105,9 @@ def model_builder(args):
     if type_of_pose_embedding == 1:
         Pose_Encoder = HierarchicalSkeletalEncoder()
     elif type_of_pose_embedding == 2:
-        Pose_Encoder = NaiveMLPEncoder()
+        Pose_Encoder = BatchedNaiveMLPEncoder()
     elif type_of_pose_embedding == 3:
-        Pose_Encoder = WeightedMLPBasedEncoder()
+        Pose_Encoder = BatchedWeightedMLPEncoder()
     elif type_of_pose_embedding == 4:
         Pose_Encoder = OptimizedHierarchicalEncoder()
     elif type_of_pose_embedding == 5:
