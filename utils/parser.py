@@ -6,14 +6,14 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--archs', type = str, default='FineParser', help = 'our approach')
     parser.add_argument('--benchmark', type = str, choices=['FineDiving'],default='FineDiving', help = 'dataset')
-    parser.add_argument('--prefix', type = str, default='default', help = 'experiment name')
+    parser.add_argument('--prefix', type = str, default='graph_network', help = 'experiment name')
     parser.add_argument('--resume', action='store_true', default=False ,help = 'resume training (interrupted by accident)')
     parser.add_argument('--sync_bn', type=bool, default=False)
     parser.add_argument('--fix_bn', type=bool, default=True)
     parser.add_argument('--test', action='store_true', default=True)
     parser.add_argument('--ckpts', type=str, default='None', help='test used ckpt path')
     parser.add_argument('--pilot_size', type=int, default=0, help='pilot study: if > 0, subsample small dataset')
-    parser.add_argument('--pose_embedding', type=int, default=1, help='which embedding to use')
+    parser.add_argument('--pose_embedding', type=int, default=3, help='which embedding to use')
     args = parser.parse_args()
 
     return args

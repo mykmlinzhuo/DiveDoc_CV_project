@@ -637,6 +637,54 @@ class WeightedMLPBasedEncoder(nn.Module):
 
         return torch.stack(out_feats, dim=0)  # [N, out_dim]
     
+class BatchedWeightedMLPEncoder(nn.Module):
+    def __init__(self, num_joints=17, input_dim=2, hidden_dims=(128, 64), out_dim=128):
+        super().__init__()
+        self.num_joints = num_joints
+        self.mlp = nn.Sequential(
+            nn.Linear(input_dim + 1, hidden_dims[0]),
+            nn.ReLU(),
+            nn.Linear(hidden_dims[0], hidden_dims[1]),
+            nn.ReLU()
+        )
+        self.proj = nn.Linear(hidden_dims[1] * num_joints, out_dim)
+
+    def forward(self, detections: List[Union[dict, None]]) -> torch.Tensor:
+        device = next(self.parameters()).device
+        batch_size = len(detections)
+        output = torch.zeros(batch_size, self.proj.out_features, device=device)
+
+        # 过滤出有效样本
+        valid_indices = []
+        kpt_list = []
+        score_list = []
+
+        for i, det in enumerate(detections):
+            if det is not None:
+                valid_indices.append(i)
+                kpt_list.append(det['keypoints'].to(device))
+                score_list.append(det['scores'].unsqueeze(-1).to(device))
+
+        if not valid_indices:
+            return output
+
+        kpts = torch.stack(kpt_list)  # [B, 17, 2]
+        scores = torch.stack(score_list)  # [B, 17, 1]
+
+        # normalize keypoints per sample
+        min_vals = kpts.min(dim=1, keepdim=True)[0]
+        max_vals = kpts.max(dim=1, keepdim=True)[0]
+        kpts_norm = (kpts - min_vals) / (max_vals - min_vals + 1e-6)
+
+        # [B, 17, 3]
+        P = torch.cat([kpts_norm, scores], dim=-1)
+        encoded = self.mlp(P)  # [B, 17, hidden]
+        weighted = encoded * scores  # [B, 17, hidden]
+        flattened = weighted.view(weighted.size(0), -1)  # [B, 17*hidden]
+        final_feats = self.proj(flattened)  # [B, out_dim]
+
+        output[valid_indices] = final_feats
+        return output
 
 class NaiveMLPEncoder(nn.Module):
     def __init__(
@@ -694,6 +742,47 @@ class NaiveMLPEncoder(nn.Module):
 
         return torch.stack(out_feats, dim=0)  # [N, out_dim]
 
+class BatchedNaiveMLPEncoder(nn.Module):
+    def __init__(self, num_joints=17, input_dim=2, hidden_dim=128, out_dim=128):
+        super().__init__()
+        self.num_joints = num_joints
+        self.mlp = nn.Sequential(
+            nn.Linear((input_dim + 1) * num_joints, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, out_dim)
+        )
+
+    def forward(self, detections: List[Union[dict, None]]) -> torch.Tensor:
+        device = next(self.parameters()).device
+        batch_size = len(detections)
+        output = torch.zeros(batch_size, self.mlp[-1].out_features, device=device)
+
+        valid_indices = []
+        kpt_list = []
+        score_list = []
+
+        for i, det in enumerate(detections):
+            if det is not None:
+                valid_indices.append(i)
+                kpt_list.append(det['keypoints'].to(device))
+                score_list.append(det['scores'].unsqueeze(-1).to(device))
+
+        if not valid_indices:
+            return output
+
+        kpts = torch.stack(kpt_list)
+        scores = torch.stack(score_list)
+
+        min_vals = kpts.min(dim=1, keepdim=True)[0]
+        max_vals = kpts.max(dim=1, keepdim=True)[0]
+        kpts_norm = (kpts - min_vals) / (max_vals - min_vals + 1e-6)
+
+        P = torch.cat([kpts_norm, scores], dim=-1)  # [B, 17, 3]
+        flattened = P.view(P.size(0), -1)  # [B, 17*3]
+        feats = self.mlp(flattened)  # [B, out_dim]
+
+        output[valid_indices] = feats
+        return output
 
 
 def count_parameters(model):
