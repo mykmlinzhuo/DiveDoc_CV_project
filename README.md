@@ -40,6 +40,7 @@
 ### Pose Embedding Final:
 - Naive: 2
 - Weighted: 3
+- Final Embedding: 5
 
 ### Results:
 Naive: 
@@ -48,6 +49,7 @@ Naive:
 - [TEST] EPOCH: -1, tIoU_5: 0.500000, tIoU_75: 0.496774
 
 - [TEST] EPOCH: -1, correlation: 0.894333, L2: 25.647221, RL2: 0.005579
+
 - [TEST] EPOCH: -1, IOU Score: 0.067038, F1 Score: 0.116243, F2 Score: 0.081758, Accuracy: 0.479295, Recall: 0.104875
 
 Weighted:
@@ -58,4 +60,13 @@ Weighted:
 - [TEST] EPOCH: -1, correlation: 0.898070, L2: 24.363815, RL2: 0.005300
 
 - [TEST] EPOCH: -1, IOU Score: 0.076103, F1 Score: 0.129787, F2 Score: 0.092725, Accuracy: 0.479598, Recall: 0.118205
+
+Final:
+- [TEST] EPOCH: -1, Loss_aqa: 21622.794922, Loss_tas: 5.006417, Loss_mask: 29.867155
+
+- [TEST] EPOCH: -1, tIoU_5: 0.500000, tIoU_75: 0.490323
+
+- [TEST] EPOCH: -1, correlation: 0.892136, L2: 27.750083, RL2: 0.006037
+
+- [TEST] EPOCH: -1, IOU Score: 0.070353, F1 Score: 0.121314, F2 Score: 0.086036, Accuracy: 0.479370, Recall: 0.108345
 
