@@ -282,7 +282,7 @@ def train_net(args, rank, world_size):
                 })
 
             
-        if epoch < 50 and (epoch+1)%4==0 or epoch>=50 and (epoch+1)%2==0 or epoch == 0:
+        if epoch < 50 and (epoch+1)%10==0 or epoch>=50 and (epoch+1)%10==0 or epoch == 0:
             validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
                      dim_reducer1, dim_reducer2, 
                         test_dataloader, epoch, optimizer, args, rank, world_size)
