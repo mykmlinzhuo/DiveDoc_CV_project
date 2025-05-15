@@ -109,7 +109,7 @@ def train_net(args, rank, world_size):
     best_recall = 0
 
     # resume ckpts
-    if args.resume or args.test:
+    if args.resume or args.test or args.compare:
         start_epoch, epoch_best_aqa, rho_best, L2_min, RL2_min = builder.resume_train(base_model, psnet_model, decoder,
                             dim_reducer1, dim_reducer2, optimizer, dim_reducer3, regressor_delta, segmenter, video_encoder, Pose_Encoder, Final_MLP, args)
         print('resume ckpts @ %d epoch(rho = %.4f, L2 = %.4f , RL2 = %.4f)'
@@ -119,6 +119,14 @@ def train_net(args, rank, world_size):
     mse = nn.MSELoss().cuda()
     bce = nn.BCELoss().cuda()
     focal_loss = smp.losses.FocalLoss('binary').cuda()
+
+    if args.compare:
+        if world_size > 1:
+            torch.distributed.barrier()
+        validate_compare(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
+                     dim_reducer1, dim_reducer2, Pose_Encoder, Final_MLP,
+                        test_dataloader, -1, optimizer, args, rank, world_size)
+        exit(0)
 
     if args.test:
         if world_size > 1:
@@ -368,6 +376,7 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
             label_2_tas_list = [item['transits'].float().cuda() + 1 for item in target]
             label_2_score_list = [item['final_score'].float().reshape(-1, 1).cuda() for item in target]
             label_1_score = data['final_score'].float().cuda()
+            print("[DEBUG-ValidateBatch] label_1_score", label_1_score)
             pose_detections_1 = data['pose_detections']
             pose_detections_2_list = [item['pose_detections'] for item in target]
             device = video_1.device
@@ -498,3 +507,177 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
                     'test/Accuracy': current_accuracy,
                     'test/Recall': current_recall
                 })
+
+def validate_compare(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter, 
+             dim_reducer1, dim_reducer2, Pose_Encoder, Final_MLP, test_dataloader, epoch, optimizer, args, rank, world_size):
+
+    if rank == 0:
+        print("Start comparing epoch {}".format(epoch))
+    global use_gpu
+    global epoch_best_aqa, rho_best, L2_min, RL2_min, epoch_best_tas, pred_tious_best_5, pred_tious_best_75
+    global epoch_best_seg, best_iou_score, best_f1_score, best_f2_score, best_accuracy, best_recall
+
+
+    true_scores = []
+    pred_scores = []
+    pred_tious_test_5 = []
+    pred_tious_test_75 = []
+    
+    segment_metrics = {
+        "iou_scores": [],
+        "f1_scores": [],
+        "f2_scores": [],
+        "accuracy": [],
+        "recall": [],
+    }
+
+    base_model.eval()  
+    psnet_model.eval()
+    for _decoder in decoder:
+        _decoder.eval()
+    for _regressor_delta in regressor_delta:
+        _regressor_delta.eval()
+    video_encoder.eval()
+    dim_reducer3.eval()
+    dim_reducer1.eval()
+    dim_reducer2.eval()
+    segmenter.eval()
+    Pose_Encoder.eval()
+    Final_MLP.eval()
+    
+    mse = nn.MSELoss().cuda()
+    bce = nn.BCELoss().cuda()
+    focal_loss = smp.losses.FocalLoss('binary').cuda()
+    
+    batch_num = len(test_dataloader)
+    total_loss = [0.0,0.0,0.0]
+    with torch.no_grad():
+        datatime_start = time.time()
+
+        for batch_idx, (data, target) in enumerate(test_dataloader, 0):
+            # print("[DEBUG-ValidateBatch] Batch true final scores:", data['final_score'][:5].cpu().numpy())
+            datatime = time.time() - datatime_start
+            start = time.time()
+
+            video_1 = data['video'].float().cuda()
+            video_1_mask = data['video_mask'].float().cuda()
+            video_2_mask_list = [item['video_mask'].float().cuda() for item in target]
+            video_2_list = [item['video'].float().cuda() for item in target]
+            label_1_tas = data['transits'].float().cuda() + 1
+            label_2_tas_list = [item['transits'].float().cuda() + 1 for item in target]
+            label_2_score_list = [item['final_score'].float().reshape(-1, 1).cuda() for item in target]
+            label_1_score = data['final_score'].float().cuda()
+            print("[DEBUG-ValidateBatch] label_1_score", label_1_score)
+            pose_detections_1 = data['pose_detections']
+            pose_detections_2_list = [item['pose_detections'] for item in target]
+            device = video_1.device
+            for det in pose_detections_1:
+                if det is not None:
+                    det['keypoints'] = det['keypoints'].to(device)
+                    det['scores'] = det['scores'].to(device)
+            for pose_detections_2 in pose_detections_2_list:
+                for det in pose_detections_2:
+                    if det is not None:
+                        det['keypoints'] = det['keypoints'].to(device)
+                        det['scores'] = det['scores'].to(device)
+            
+
+            res = helper.network_forward_compare(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
+                                        dim_reducer1, dim_reducer2, pred_scores,
+                                        video_1, video_2_list, label_2_score_list, video_1_mask, video_2_mask_list, pose_detections_1, pose_detections_2_list,
+                                        args, label_1_tas, label_2_tas_list, 
+                                        pred_tious_test_5, pred_tious_test_75, segment_metrics,
+                                        mse, bce, focal_loss, label_1_score, Pose_Encoder, Final_MLP)
+            
+            for t in range(len(res)):
+                total_loss[t] += res[t]
+
+            batch_time = time.time() - start
+            if rank == 0 and batch_idx % args.print_freq == 0:
+                print('[TEST][%d/%d][%d/%d] \t Batch_time %.2f \t Data_time %.2f'
+                    % (epoch, args.max_epoch, batch_idx, batch_num, batch_time, datatime))
+            datatime_start = time.time()
+            true_scores.extend(data['final_score'].numpy())
+            # print("[DEBUG-Collect] Adding to true_scores:", data['final_score'].shape)
+        
+        # evaluation results
+        t_loss = []
+        for l in total_loss:
+            loss_tensor = torch.tensor(l).cuda()
+            t_loss.append(loss_tensor)
+        
+        pred_scores = np.array(pred_scores)
+        true_scores = np.array(true_scores)
+        
+        pred_scores_tensor = torch.as_tensor(pred_scores, device='cuda')
+        true_scores_tensor = torch.as_tensor(true_scores, device='cuda')
+
+        gathered_pred_scores = pred_scores_tensor.cpu().numpy()
+        gathered_true_scores = true_scores_tensor.cpu().numpy()
+
+        sum_iou = torch.tensor(sum(segment_metrics["iou_scores"])).cuda()
+        sum_f1 = torch.tensor(sum(segment_metrics["f1_scores"])).cuda()
+        sum_f2 = torch.tensor(sum(segment_metrics["f2_scores"])).cuda()
+        sum_accuracy = torch.tensor(sum(segment_metrics["accuracy"])).cuda()
+        sum_recall = torch.tensor(sum(segment_metrics["recall"])).cuda()
+
+        # 使用 all_reduce 聚合数据
+        
+        sum_test_iou_5 = torch.tensor(sum(pred_tious_test_5)).cuda()
+        sum_test_iou_75 = torch.tensor(sum(pred_tious_test_75)).cuda()
+        
+        
+        if rank == 0:
+            rho, p = stats.spearmanr(gathered_pred_scores, gathered_true_scores)
+            L2 = np.power(gathered_pred_scores - gathered_true_scores, 2).sum() / gathered_true_scores.shape[0]
+            RL2 = np.power((gathered_pred_scores - gathered_true_scores) / (gathered_true_scores.max() - gathered_true_scores.min()), 2).sum() / gathered_true_scores.shape[0]
+            pred_tious_test_mean_5 = (sum_test_iou_5 / (len(test_dataloader) * args.bs_test)) / world_size
+            pred_tious_test_mean_75 = (sum_test_iou_75 / (len(test_dataloader) * args.bs_test)) / world_size
+
+            if pred_tious_test_mean_5 > pred_tious_best_5:
+                pred_tious_best_5 = pred_tious_test_mean_5
+            if pred_tious_test_mean_75 > pred_tious_best_75:
+                pred_tious_best_75 = pred_tious_test_mean_75
+                epoch_best_tas = epoch
+        
+            current_iou_score = (sum_iou.item() / world_size) / (len(test_dataloader) * args.bs_test) / args.voter_number
+            current_f1_score = (sum_f1.item() / world_size) / (len(test_dataloader) * args.bs_test) / args.voter_number
+            current_f2_score = (sum_f2.item() / world_size) / (len(test_dataloader) * args.bs_test)/ args.voter_number
+            current_accuracy = (sum_accuracy.item() / world_size) / (len(test_dataloader) * args.bs_test)/ args.voter_number
+            current_recall = (sum_recall.item() / world_size)/ (len(test_dataloader) * args.bs_test)/ args.voter_number
+            
+            
+            if current_iou_score > best_iou_score:
+                best_iou_score = current_iou_score
+                epoch_best_seg = epoch  
+
+            if current_f1_score > best_f1_score:
+                best_f1_score = current_f1_score
+
+            if current_f2_score > best_f2_score:
+                best_f2_score = current_f2_score
+
+            if current_accuracy > best_accuracy:
+                best_accuracy = current_accuracy
+
+            if current_recall > best_recall:
+                best_recall = current_recall
+                
+            if L2_min > L2:
+                L2_min = L2
+            if RL2_min > RL2:
+                RL2_min = RL2
+            if rho > rho_best:
+                rho_best = rho
+                epoch_best_aqa = epoch
+                print('-----New best found!-----')
+                helper.save_checkpoint(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter, 
+                                   dim_reducer1,dim_reducer2,
+                                   optimizer, epoch, epoch_best_aqa, rho_best, L2_min, RL2_min, Pose_Encoder, Final_MLP, 'best', args)
+            helper.save_outputs(gathered_pred_scores, gathered_true_scores, args, epoch)
+            print("Predicted final scores (after voting):", gathered_pred_scores[:20])
+            print("Ground truth scores:", gathered_true_scores[:20])
+            print('[TEST] EPOCH: %d, Loss_aqa: %.6f, Loss_tas: %.6f, Loss_mask: %.6f' % (epoch, t_loss[0], t_loss[1], t_loss[2]))
+            print('[TEST] EPOCH: %d, tIoU_5: %.6f, tIoU_75: %.6f' % (epoch, pred_tious_best_5, pred_tious_best_75))
+            print('[TEST] EPOCH: %d, correlation: %.6f, L2: %.6f, RL2: %.6f' % (epoch, rho, L2, RL2))
+            print('[TEST] EPOCH: %d, IOU Score: %.6f, F1 Score: %.6f, F2 Score: %.6f, Accuracy: %.6f, Recall: %.6f' % (epoch, current_iou_score, current_f1_score, current_f2_score, current_accuracy, current_recall))

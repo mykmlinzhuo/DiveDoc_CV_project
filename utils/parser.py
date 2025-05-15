@@ -6,7 +6,7 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--archs', type = str, default='FineParser', help = 'our approach')
     parser.add_argument('--benchmark', type = str, choices=['FineDiving'],default='FineDiving', help = 'dataset')
-    parser.add_argument('--prefix', type = str, default='graph_network', help = 'experiment name')
+    parser.add_argument('--prefix', type = str, default='weighted_mlp', help = 'experiment name')
     parser.add_argument('--resume', action='store_true', default=False ,help = 'resume training (interrupted by accident)')
     parser.add_argument('--sync_bn', type=bool, default=False)
     parser.add_argument('--fix_bn', type=bool, default=True)

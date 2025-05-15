@@ -78,15 +78,15 @@ print(f"Filtered train data size: {len(new_train_data)}")
 print(f"Original test data size: {len(test_data)}")
 print(f"Filtered test data size: {len(new_test_data)}")
 
-# Save the new train and test data
-with open(new_train_split, 'wb') as f:
-    pickle.dump(new_train_data, f)
+# # Save the new train and test data
+# with open(new_train_split, 'wb') as f:
+#     pickle.dump(new_train_data, f)
 
-with open(new_test_split, 'wb') as f:
-    pickle.dump(new_test_data, f)
+# with open(new_test_split, 'wb') as f:
+#     pickle.dump(new_test_data, f)
 
-print(f"New train data saved to {new_train_split}")
-print(f"New test data saved to {new_test_split}")
+# print(f"New train data saved to {new_train_split}")
+# print(f"New test data saved to {new_test_split}")
 
 
 
