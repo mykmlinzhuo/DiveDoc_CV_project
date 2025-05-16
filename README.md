@@ -25,19 +25,38 @@
 ### Updates:
 - **Refactored**: The total pipe for running on a single gpu.
 - **Baseline Results**: 
-<!-- [TEST] EPOCH: -1, tIoU_5: 0.995995, tIoU_75: 0.889186
-[TEST] EPOCH: -1, correlation: 0.922811, L2: 46.747684, RL2: 0.004289
-[TEST] EPOCH: -1, IOU Score: 0.090167, F1 Score: 0.160546, F2 Score: 0.110866, Accuracy: 0.934730, Recall: 0.140347 -->
-<!-- show this in a table -->
-| Metric        | Value       |
-|---------------|-------------|
-| tIoU_5        | 0.995995    |
-| tIoU_75       | 0.889186    |
-| Correlation    | 0.922811    |
-| L2            | 46.747684   |
-| RL2           | 0.004289    |
-| IOU Score     | 0.090167    |
-| F1 Score      | 0.160546    |
-| F2 Score      | 0.110866    |
-| Accuracy      | 0.934730    |
-| Recall        | 0.140347    |
+  | Metric        | Value       |
+  |---------------|-------------|
+  | tIoU_75       | 0.687500    |
+  | Correlation    |  0.850626   |
+  | RL2           | 0.014540   |
+  | IOU Score     | 0.090167    |
+  | F1 Score      | 0.035744    |
+  | F2 Score      | 0.023285    |
+  | Accuracy      | 0.952926    |
+  | Recall        | 0.051676    |
+
+2025.5.12
+Pose Embedding Final:
+Naive: 2
+Weighted: 3
+Final Embedding: 5
+Results:
+Naive:
+[TEST] EPOCH: -1, Loss_aqa: 8596.299805, Loss_tas: 9.952188, Loss_mask: 58.478523
+[TEST] EPOCH: -1, tIoU_5: 0.996774, tIoU_75: 0.958065
+[TEST] EPOCH: -1, correlation: 0.891822, L2: 25.896963, RL2: 0.005634
+[TEST] EPOCH: -1, IOU Score: 0.141680, F1 Score: 0.242823, F2 Score: 0.172409, Accuracy: 0.958526, Recall: 0.207946
+
+Weighted:
+
+[TEST] EPOCH: -1, Loss_aqa: 21594.777344, Loss_tas: 5.978729, Loss_mask: 29.210537
+[TEST] EPOCH: -1, tIoU_5: 0.500000, tIoU_75: 0.490323
+[TEST] EPOCH: -1, correlation: 0.898070, L2: 24.363815, RL2: 0.005300
+[TEST] EPOCH: -1, IOU Score: 0.076103, F1 Score: 0.129787, F2 Score: 0.092725, Accuracy: 0.479598, Recall: 0.118205
+
+Final:
+[TEST] EPOCH: -1, Loss_aqa: 9196.884766, Loss_tas: 9.964624, Loss_mask: 59.446674
+[TEST] EPOCH: -1, tIoU_5: 1.000000, tIoU_75: 0.954839
+[TEST] EPOCH: -1, correlation: 0.892625, L2: 27.877840, RL2: 0.006065
+[TEST] EPOCH: -1, IOU Score: 0.149444, F1 Score: 0.254091, F2 Score: 0.182265, Accuracy: 0.959037, Recall: 0.215797

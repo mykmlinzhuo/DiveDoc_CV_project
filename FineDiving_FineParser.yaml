@@ -41,5 +41,5 @@ resume: False
 temporal_shift_min : -3
 temporal_shift_max : 0
 wandb: True
-test: False
+test: True
 
