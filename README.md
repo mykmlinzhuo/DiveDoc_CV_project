@@ -50,13 +50,18 @@ Naive:
 
 Weighted:
 
-[TEST] EPOCH: -1, Loss_aqa: 21594.777344, Loss_tas: 5.978729, Loss_mask: 29.210537
-[TEST] EPOCH: -1, tIoU_5: 0.500000, tIoU_75: 0.490323
-[TEST] EPOCH: -1, correlation: 0.898070, L2: 24.363815, RL2: 0.005300
-[TEST] EPOCH: -1, IOU Score: 0.076103, F1 Score: 0.129787, F2 Score: 0.092725, Accuracy: 0.479598, Recall: 0.118205
+[TEST] EPOCH: -1, Loss_aqa: 7833.480957, Loss_tas: 11.933262, Loss_mask: 58.720970
+[TEST] EPOCH: -1, tIoU_5: 0.996774, tIoU_75: 0.935484
+[TEST] EPOCH: -1, correlation: 0.897406, L2: 24.321457, RL2: 0.005291
+[TEST] EPOCH: -1, IOU Score: 0.161848, F1 Score: 0.272085, F2 Score: 0.196624, Accuracy: 0.958923, Recall: 0.236343
 
 Final:
 [TEST] EPOCH: -1, Loss_aqa: 9196.884766, Loss_tas: 9.964624, Loss_mask: 59.446674
 [TEST] EPOCH: -1, tIoU_5: 1.000000, tIoU_75: 0.954839
 [TEST] EPOCH: -1, correlation: 0.892625, L2: 27.877840, RL2: 0.006065
 [TEST] EPOCH: -1, IOU Score: 0.149444, F1 Score: 0.254091, F2 Score: 0.182265, Accuracy: 0.959037, Recall: 0.215797
+
+[TEST] EPOCH: -1, Loss_aqa: 23738.371094, Loss_tas: 5.073991, Loss_mask: 29.042435
+[TEST] EPOCH: -1, tIoU_5: 0.500000, tIoU_75: 0.496774
+[TEST] EPOCH: -1, correlation: 0.890980, L2: 27.723163, RL2: 0.006031
+[TEST] EPOCH: -1, IOU Score: 0.079242, F1 Score: 0.134440, F2 Score: 0.096672, Accuracy: 0.479756, Recall: 0.122152

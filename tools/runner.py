@@ -129,7 +129,7 @@ def train_net(args, rank, world_size):
             torch.distributed.barrier()
         validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter,
                      dim_reducer1, dim_reducer2, 
-                        test_dataloader, -1, optimizer, args, rank)
+                        test_dataloader, -1, optimizer, args, rank,world_size)
         exit(0)
 
     # training phase
