@@ -1,72 +1,95 @@
-## 2025.4.27
+# 🏊 DiveDoc: Structured Diagnosis of Diving Performance via Pose-Guided Action Parsing
+DiveDoc is a fine-grained action quality assessment (AQA) model for diving videos. It parses human-centric motion into spatial-temporal steps using pose guidance and performs structured comparisons with exemplars to generate interpretable scores.
+[paper](paper/DiveDoc.pdf)
 
-### Updates:
-- **Added**: `VitPose` folder for keypoint estimation.
-- **Instructions**:
-  1. Follow the `requirements.txt` file to install the required environment.
-  2. Run `dataset_pose.py` to generate the file `fine-grained_annotation_aqa_with_keypoints.pkl`.
 
-### Details:
-- The file `fine-grained_annotation_aqa_with_keypoints.pkl` is similar to the original `fine-grained_annotation_aqa.pkl`, with the following difference:
-  - For each key, its value now includes an **additional sixth element**, which is a list.
-  - The list has a length equal to the number of images for that key.
-  - Each element in the list is either:
-    - A **dictionary** (if a person is detected in the corresponding frame), or
-    - **None** (if no person is detected in the frame).
+## Requirements
 
-### Dictionary Structure:
-- If a person is detected, the dictionary contains the following keys:
-  1. **`keypoints`**: The detected keypoints for the person.
-  2. **`scores`**: The confidence scores for each keypoint.
-  3. **`labels`**: The labels associated with the detected keypoints.
-  4. **`bbox`**: The bounding box coordinates for the detected person.
+Make sure the following dependencies installed (python):
 
-## 2025.4.28
-### Updates:
-- **Refactored**: The total pipe for running on a single gpu.
-- **Baseline Results**: 
-  | Metric        | Value       |
-  |---------------|-------------|
-  | tIoU_75       | 0.687500    |
-  | Correlation    |  0.850626   |
-  | RL2           | 0.014540   |
-  | IOU Score     | 0.090167    |
-  | F1 Score      | 0.035744    |
-  | F2 Score      | 0.023285    |
-  | Accuracy      | 0.952926    |
-  | Recall        | 0.051676    |
+* pytorch >= 0.4.0
+* matplotlib=3.1.0
+* einops
+* timm
+* torch_videovision
 
-## 2025.5.12
-### Pose Embedding Final:
-- Naive: 2
-- Weighted: 3
-- Final Embedding: 5
+```
+pip install git+https://github.com/hassony2/torch_videovision
+```
 
-### Results:
-Naive: 
-- [TEST] EPOCH: -1, Loss_aqa: 23665.031250, Loss_tas: 4.978251, Loss_mask: 29.113617
+## Dataset & Annotations
 
-- [TEST] EPOCH: -1, tIoU_5: 0.500000, tIoU_75: 0.496774
+### FineDiving Download
 
-- [TEST] EPOCH: -1, correlation: 0.894333, L2: 25.647221, RL2: 0.005579
+To download the FineDiving dataset and annotations, please follow [FineDiving](https://github.com/xujinglin/FineDiving).
 
-- [TEST] EPOCH: -1, IOU Score: 0.067038, F1 Score: 0.116243, F2 Score: 0.081758, Accuracy: 0.479295, Recall: 0.104875
+### FineDiving-HM Download
+To download FineDiving-HM, please sign the [Release Agreement](agreement/Release_Agreement.pdf) and send it to send it to Jinglin Xu (xujinglinlove@gmail.com). By sending the application, you are agreeing and acknowledging that you have read and understand the notice. We will reply with the file and the corresponding guidelines right after we receive your request!
 
-Weighted:
-- [TEST] EPOCH: -1, Loss_aqa: 21594.777344, Loss_tas: 5.978729, Loss_mask: 29.210537
 
-- [TEST] EPOCH: -1, tIoU_5: 0.500000, tIoU_75: 0.490323
-  
-- [TEST] EPOCH: -1, correlation: 0.898070, L2: 24.363815, RL2: 0.005300
+The format of FineDiving-HM is consistent with FineDiving. Please place the downloaded FineDiving-HM in `data`.
 
-- [TEST] EPOCH: -1, IOU Score: 0.076103, F1 Score: 0.129787, F2 Score: 0.092725, Accuracy: 0.479598, Recall: 0.118205
+You could also seek to any of the two authors for the dataset and annotations.
 
-Final:
-- [TEST] EPOCH: -1, Loss_aqa: 21622.794922, Loss_tas: 5.006417, Loss_mask: 29.867155
+### Data Structure
 
-- [TEST] EPOCH: -1, tIoU_5: 0.500000, tIoU_75: 0.490323
+```
+$DATASET_ROOT
+├── FineDiving
+|  ├── FINADivingWorldCup2021_Men3m_final_r1
+|     ├── 0
+|        ├── 00489.jpg
+|        ...
+|        └── 00592.jpg
+|     ...
+|     └── 11
+|        ├── 14425.jpg
+|        ...
+|        └── 14542.jpg
+|  ...
+|  └── FullMenSynchronised10mPlatform_Tokyo2020Replays_2
+|     ├── 0
+|     ...
+|     └── 16 
+└──FineDiving_HM
+|  ├── FINADivingWorldCup2021_Men3m_final_r1
+|     ├── 0
+|        ├── 00489.jpg
+|        ...
+|        └── 00592.jpg
+|     ...
+|     └── 11
+|        ├── 14425.jpg
+|        ...
+|        └── 14542.jpg
+|  ...
+|  └── FullMenSynchronised10mPlatform_Tokyo2020Replays_2
+|     ├── 0
+|     ...
+|     └── 16 
 
-- [TEST] EPOCH: -1, correlation: 0.892136, L2: 27.750083, RL2: 0.006037
+$ANNOTATIONS_ROOT
+|  ├── FineDiving_coarse_annotation.pkl
+|  ├── FineDiving_fine-grained_annotation.pkl
+|  ├── Sub_action_Types_Table.pkl
+|  ├── fine-grained_annotation_aqa.pkl
+|  ├── train_split_5.pkl
+|  ├── test_split_5.pkl
+```
 
-- [TEST] EPOCH: -1, IOU Score: 0.070353, F1 Score: 0.121314, F2 Score: 0.086036, Accuracy: 0.479370, Recall: 0.108345
+## Training
+Training on 1*NVIDIA A100 40G GPU.
+
+To download pretrained_i3d_wight, please follow [kinetics_i3d_pytorch](https://github.com/hassony2/kinetics_i3d_pytorch/tree/master), and put `model_rgb.pth` in `models` folder.
+
+To train the model, please run:
+```bash
+python launch_single.py
+```
+
+## Test
+To test the trained model, please set `test: True` in [config](FineDiving_FineParser.yaml) and run:
+```bash
+python launch_single.py
+```
 
