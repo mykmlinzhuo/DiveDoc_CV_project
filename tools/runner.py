@@ -376,7 +376,6 @@ def validate(base_model, psnet_model, decoder, regressor_delta, video_encoder, d
             label_2_tas_list = [item['transits'].float().cuda() + 1 for item in target]
             label_2_score_list = [item['final_score'].float().reshape(-1, 1).cuda() for item in target]
             label_1_score = data['final_score'].float().cuda()
-            print("[DEBUG-ValidateBatch] label_1_score", label_1_score)
             pose_detections_1 = data['pose_detections']
             pose_detections_2_list = [item['pose_detections'] for item in target]
             device = video_1.device
@@ -567,7 +566,6 @@ def validate_compare(base_model, psnet_model, decoder, regressor_delta, video_en
             label_2_tas_list = [item['transits'].float().cuda() + 1 for item in target]
             label_2_score_list = [item['final_score'].float().reshape(-1, 1).cuda() for item in target]
             label_1_score = data['final_score'].float().cuda()
-            print("[DEBUG-ValidateBatch] label_1_score", label_1_score)
             pose_detections_1 = data['pose_detections']
             pose_detections_2_list = [item['pose_detections'] for item in target]
             device = video_1.device

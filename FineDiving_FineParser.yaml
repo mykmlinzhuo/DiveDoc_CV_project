@@ -1,7 +1,7 @@
 # basic
 
-bs_train : 4
-bs_test : 2
+bs_train : 1
+bs_test : 1
 workers : 8
 
 update_iter : 2
@@ -16,17 +16,17 @@ pose_embedding: 3
 pretrained_i3d_weight : 'models/model_rgb.pth'
 
 data_root : '/localdata/syb/Released_FineDiving_Dataset/Dataset/FineDiving'
-label_path : '/localdata/syb/Released_FineDiving_Dataset/Annotations/fine-grained_annotation_aqa.pkl'
+label_path : '/localdata/syb/Released_FineDiving_Dataset/Annotations/fine-grained_annotation_aqa_with_keypoints.pkl'
 train_split : '/localdata/syb/Released_FineDiving_Dataset/Annotations/train_split_5.pkl'
 test_split : '/localdata/syb/Released_FineDiving_Dataset/Annotations/test_split_5.pkl'
 data_mask_root: '/localdata/syb/Released_FineDiving_Dataset/Dataset/FineDiving_HM'
 
 compare : True
 # action is one in  ['407c', '107b', '307c', '5253b', '205b']
-action : '107b'
+# action : '407c'
 bs_test : 1
-train_split : '/localdata/syb/Released_FineDiving_Dataset/Annotations/top5_action_best_keys_train/107b_best_key.pkl'
-test_split : '/localdata/syb/Released_FineDiving_Dataset/Annotations/top5_action_best_keys_train/107b_3test_keys.pkl'
+train_split: "/localdata/syb/Released_FineDiving_Dataset/Annotations/top5_action_best_keys_train/307c_best_key.pkl"
+test_split: "/localdata/syb/Released_FineDiving_Dataset/Annotations/top5_action_best_keys_train/307c_1test_key.pkl"
 
 # optimizer
 optimizer: 'Adam'

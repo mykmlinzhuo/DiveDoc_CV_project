@@ -1,4 +1,5 @@
 import os, sys
+import matplotlib.pyplot as plt
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
@@ -308,6 +309,8 @@ def network_forward_train(base_model, psnet_model, decoder, regressor_delta,
     delta_dynamic = (delta1_1*3+delta1_2*5+delta1_3*2)/10
     delta_static = (delta2_1*3+delta2_2*5+delta2_3*2)/10
     delta_pose = delta_pose.mean(1)
+    print("delta_dynamic:", delta_dynamic[0][0])
+    print("delta_static:", delta_static[0][0])
     print("delta_pose:", delta_pose[0][0])
     delta_all = torch.stack([delta_dynamic, delta_static, delta_pose], dim=1)
 
@@ -649,6 +652,93 @@ def network_forward_test(base_model, psnet_model, decoder, regressor_delta, vide
         t_loss[i] /= args.voter_number
     return t_loss
 
+def inverse_normalize(img, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
+    """
+    img: numpy array [H, W, 3] or torch.Tensor [3, H, W] or [H, W, 3]
+    Returns: numpy array [H, W, 3] in [0, 1] range
+    """
+    import numpy as np
+    img = img.copy()
+    if img.ndim == 3 and img.shape[2] == 3:  # [H, W, 3]
+        for c in range(3):
+            img[..., c] = img[..., c] * std[c] + mean[c]
+    elif img.ndim == 3 and img.shape[0] == 3:  # [3, H, W]
+        for c in range(3):
+            img[c, ...] = img[c, ...] * std[c] + mean[c]
+        img = np.transpose(img, (1, 2, 0))
+    img = np.clip(img, 0, 1)
+    return img
+
+def visualize_mask_heatmap(mask_pred_tensor, orig_imgs, idx=0, save_path=None, alpha=0.7, save_orig_path=None):
+    """
+    mask_pred_tensor: torch.Tensor, shape [B*T, 1, H, W] or [B*T, H, W]
+    orig_imgs: torch.Tensor or np.ndarray, shape [B*T, 3, H, W] (RGB)
+    idx: index to visualize
+    save_path: if not None, save the figure
+    alpha: transparency for mask overlay
+    save_orig_path: if not None, save the original image for inspection
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    # Prepare mask
+    if mask_pred_tensor.dim() == 4 and mask_pred_tensor.shape[1] == 1:
+        mask_np = mask_pred_tensor[idx, 0].detach().cpu().numpy()
+    elif mask_pred_tensor.dim() == 3:
+        mask_np = mask_pred_tensor[idx].detach().cpu().numpy()
+    else:
+        raise ValueError("Unexpected mask_pred_tensor shape")
+
+    # Prepare original image and inverse normalize
+    orig_img = orig_imgs[idx]
+    if isinstance(orig_img, torch.Tensor):
+        orig_img = orig_img.detach().cpu().numpy()
+    if orig_img.shape[0] == 3 and orig_img.ndim == 3:
+        orig_img = np.transpose(orig_img, (1, 2, 0))  # [H, W, 3]
+    orig_img = inverse_normalize(orig_img)
+
+    # Save the original image if requested
+    if save_orig_path is not None:
+        plt.imsave(save_orig_path, np.clip(orig_img, 0, 1))
+
+    # Resize mask to match image if needed
+    if mask_np.shape != orig_img.shape[:2]:
+        from skimage.transform import resize
+        mask_np = resize(mask_np, orig_img.shape[:2], order=1, preserve_range=True, anti_aliasing=True)
+
+    # Only show color for region > 0, others transparent
+    mask_display = np.zeros_like(mask_np)
+    mask_display[mask_np > 0] = mask_np[mask_np > 0]
+
+    # Create an RGBA mask overlay using a colormap
+    from matplotlib import cm
+    cmap = cm.get_cmap('jet')
+    mask_rgba = cmap((mask_display - mask_display.min()) / (mask_display.max() - mask_display.min() + 1e-8))
+    mask_rgba[..., 3] = 0  # fully transparent by default
+    mask_rgba[mask_display > 0, 3] = alpha  # only >0 region is visible
+
+    # Make the background darker for overlay
+    dark_orig_img = orig_img * np.array([0.2, 0.2, 0.5])  # darken the original image
+
+    # Create a figure with two subplots: overlay (top), original (bottom)
+    fig, axs = plt.subplots(2, 1, figsize=(6, 12), gridspec_kw={'hspace': 0.01})
+    fig.patch.set_facecolor('white')  # Set the figure background to white
+
+    # Top subplot: overlay
+    axs[0].imshow(dark_orig_img)
+    axs[0].imshow(mask_rgba)
+    axs[0].axis('off')
+
+    # Bottom subplot: original image
+    axs[1].imshow(orig_img)
+    axs[1].axis('off')
+
+    # Save the final figure
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight', pad_inches=0)
+    plt.close()
+
+
 def network_forward_compare(base_model, psnet_model, decoder, regressor_delta, video_encoder, dim_reducer3, segmenter, 
                          dim_reducer1, dim_reducer2, pred_scores,
                          video_1, video_2_list, label_2_score_list, video_1_mask, video_2_mask_list, pose_detections_1, pose_detections_2_list,
@@ -680,8 +770,34 @@ def network_forward_compare(base_model, psnet_model, decoder, regressor_delta, v
         loss_mask = 0.0
         for i in range(5):
             loss_mask += focal_loss(mask_pred_[i], mask_target)
-            
+            print(f"mask_pred_[{i}] shape: {mask_pred_[i].shape}")
+            print(f"mask_target shape: {mask_target.shape}")
+        print(f"video_pack shape: {video_pack.shape}")
+        print(f"mask_pred[-1] shape: {mask_pred[-1].shape}")
         mask_pred = rearrange(mask_pred[-1], "b c t h w -> (b t) c h w")
+        print(f"mask_pred shape: {mask_pred.shape}")
+        print(f"mask_target shape: {mask_target.shape}")
+        video_pack_show = rearrange(video_pack, "b c t h w -> (b t) c h w")
+        print(f"video_pack_show shape: {video_pack_show.shape}")
+
+        save_dir = "./data/mask_heatmaps"
+        os.makedirs(save_dir, exist_ok=True)
+
+        num_masks = mask_pred.shape[0]
+        for i in range(num_masks):
+            # For every index, or change to "if i % 5 == 0:" for every 5th index
+            if i % 5 == 0:  # Change to "if True" to save all
+                # Get the corresponding original image
+                # Example: orig_img = orig_imgs[i]
+                # You need to provide orig_imgs (original frames) to this function
+                save_path = os.path.join(save_dir, f"{i}.png")
+                visualize_mask_heatmap(mask_pred, video_pack_show, idx=i, save_path=save_path, alpha=0.7, save_orig_path=None)
+        # # Visualize and save heatmap for the first mask in the batch
+        # save_dir = "./data/mask_heatmaps"
+        # os.makedirs(save_dir, exist_ok=True)
+        # heatmap_path = os.path.join(save_dir, f"mask_pred_heatmap_idx{idx}.png")
+        # visualize_mask_heatmap(mask_pred, idx=0, save_path=heatmap_path)
+
         tp, fp, fn, tn = smp.metrics.get_stats(mask_pred, mask_target, mode='binary', threshold=0.5)
         iou_score = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
         f1_score = smp.metrics.f1_score(tp, fp, fn, tn, reduction="micro")
@@ -894,7 +1010,6 @@ def network_forward_compare(base_model, psnet_model, decoder, regressor_delta, v
         delta_dynamic = (delta1_1*3+delta1_2*5+delta1_3*2)/10
         delta_static = (delta2_1*3+delta2_2*5+delta2_3*2)/10
         delta_pose = (delta_pose_1*3+delta_pose_2*5+delta_pose_3*2)/10
-        print(f"delta_dynamic: {delta_dynamic[0][0]}, delta_static: {delta_static[0][0]}, delta_pose: {delta_pose[0][0]}")
         
         delta_all = torch.stack([delta_dynamic, delta_static, delta_pose], dim=1)
 
@@ -903,12 +1018,14 @@ def network_forward_compare(base_model, psnet_model, decoder, regressor_delta, v
 
         # 这样 delta 就是最终的误差增量，不需要再过 MLP 了
         final_delta = delta.squeeze(-1)  # [2*batch,1]
-        print(f"final_delta: {final_delta[0]}")
-        print(f"final_delta shape: {final_delta.shape}")
-        print(f"label_2_score: {label_2_score}")
+        print(f"example_score: {label_2_score[0][0]:.4f}")
+        print(f"delta_dynamic: {delta_dynamic[0][0]:.4f}, delta_static: {delta_static[0][0]:.4f}, delta_pose: {delta_pose[0][0]:.4f}")
+        print(f"final_delta: {final_delta[0][0]:.4f}")
         
         predicted_score = final_delta[:final_delta.shape[0] // 2].detach() + label_2_score
-        print(f"predicted_score: {predicted_score}")
+        print(f"predicted_query_score: {predicted_score[0][0]:.4f}")
+        print(f"ground_truth_qeury_score: {label_1_score[0]:.4f}")
+        print("")
         score += predicted_score
         
         loss_aqa = mse(final_delta[:final_delta.shape[0] // 2], (label_1_score - label_2_score))

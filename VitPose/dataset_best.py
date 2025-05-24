@@ -56,3 +56,8 @@ for action_type in top_k_action_types:
     with open(test_file_path, "wb") as f:
         pickle.dump(three_test_keys, f)
     print(f"Saved 3 test keys for action '{action_type}' to {test_file_path}, which are {three_test_keys}, with scores {[label_data[k][1] for k in three_test_keys]}") if three_test_keys else print(f"No test keys for action '{action_type}'")
+    one_test_key = [test_keys[0]] if test_keys else None
+    one_test_file_path = os.path.join(save_dir, f"{action_type}_1test_key.pkl")
+    with open(one_test_file_path, "wb") as f:
+        pickle.dump(one_test_key, f)
+    print(f"Saved 1 test key for action '{action_type}' to {one_test_file_path}, which is {one_test_key}, with score {label_data[one_test_key[0]][1] if one_test_key else 'N/A'}") if one_test_key else print(f"No test keys for action '{action_type}'")

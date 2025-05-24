@@ -32,7 +32,7 @@ with open(label_path, 'rb') as f:
 # Count occurrences of each action type and store associated keys
 action_counts = {}
 action_keys = {}  # Dictionary to store keys for each action type
-
+print(f"number of video: {len(label_data)}")
 for key, value in label_data.items():
     action_type = value[0]
     # Count occurrences
@@ -45,11 +45,21 @@ for key, value in label_data.items():
 
 # Sort action types by count in decreasing order
 sorted_action_counts = sorted(action_counts.items(), key=lambda x: x[1], reverse=True)
-
+id = 0
 # Print the sorted action counts and associated keys
 for action_type, count in sorted_action_counts:
+    # if count < 10:
+    #     print(f"number of action type more than 10: {id}")
+    # elif count < 20:
+    #     print(f"number of action type more than 20: {id}")
+    # elif count < 30:
+    #     print(f"number of action type more than 30: {id}")
+    id += 1
     print(f"Action Type: {action_type}, Count: {count}")
     # print(f"Keys: {action_keys[action_type]}")
+
+    
+print(f"number of action type: {id}")
 top_k_action_types = [action_type for action_type, _ in sorted_action_counts[:TOP_K]]
 # Print the top K action types
 print(f"Top {TOP_K} Action Types: {top_k_action_types}")
