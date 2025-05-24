@@ -15,11 +15,11 @@ prefix: 'graph_network'
 # model
 pretrained_i3d_weight : 'models/model_rgb.pth'
 
-data_root : '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/FineDiving'
-label_path : '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/Annotations/fine-grained_annotation_aqa_with_keypoints.pkl'
-train_split : '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/Annotations/train_split_5.pkl'
-test_split : '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/Annotations/test_split_5.pkl'
-data_mask_root: '/cephfs/shared/linzhuo/CV/proj/FineDivingDataset/FineDiving_HM'
+data_root : 'yourpath/FineDivingDataset/FineDiving'
+label_path : 'yourpath/FineDivingDataset/Annotations/fine-grained_annotation_aqa_with_keypoints.pkl'
+train_split : 'yourpath/FineDivingDataset/Annotations/train_split_5.pkl'
+test_split : 'yourpath/FineDivingDataset/Annotations/test_split_5.pkl'
+data_mask_root: 'yourpath/FineDivingDataset/FineDiving_HM'
 
 
 
@@ -45,5 +45,5 @@ resume: False
 temporal_shift_min : -3
 temporal_shift_max : 0
 wandb: True
-test: True
+test: False
 

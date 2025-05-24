@@ -1,6 +1,6 @@
 # 🏊 DiveDoc: Structured Diagnosis of Diving Performance via Pose-Guided Action Parsing
 DiveDoc is a fine-grained action quality assessment (AQA) model for diving videos. It parses human-centric motion into spatial-temporal steps using pose guidance and performs structured comparisons with exemplars to generate interpretable scores.
-[paper](paper/DiveDoc.pdf)
+[paper](paper/final.pdf)
 
 
 ## Requirements
